@@ -22,11 +22,14 @@ use RuntimeException;
 abstract class BaseLoginController
 {
     /**
-     * Override to include extra fields in the JWT token beyond the defaults.
+     * Override to use a JwtContext subclass (custom token fields, expiry or
+     * default role — see JwtContext::customTokenFields/tokenExpiry/defaultRole).
+     *
+     * @return class-string<JwtContext>
      */
-    protected function extraTokenFields(): array
+    protected function getJwtContextClass(): string
     {
-        return [];
+        return JwtContext::class;
     }
 
     /**
@@ -37,19 +40,12 @@ abstract class BaseLoginController
         return 'email_code.html';
     }
 
-    /**
-     * Override to change token expiry (in seconds). Defaults to 1 hour.
-     */
-    protected function tokenExpiry(): int
-    {
-        return 3600;
-    }
-
     public function post(HttpResponse $response, HttpRequest $request): void
     {
         $json = ValidateRequest::getPayload() ?? [];
 
-        $userToken = JwtContext::createUserMetadata($json["username"], $json["password"]);
+        $jwtContext = $this->getJwtContextClass();
+        $userToken = $jwtContext::createUserMetadata($json["username"], $json["password"]);
 
         if ($userToken === null) {
             throw new Error401Exception("Failed to create user token");
@@ -84,7 +80,8 @@ abstract class BaseLoginController
 
         /** @var BaseUser $user */
         $user = $userModel;
-        $metadata = JwtContext::createUserMetadata($user);
+        $jwtContext = $this->getJwtContextClass();
+        $metadata = $jwtContext::createUserMetadata($user);
 
         if ($metadata === null) {
             throw new Error401Exception("Failed to create user metadata");
