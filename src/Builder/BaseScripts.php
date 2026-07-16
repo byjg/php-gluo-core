@@ -43,10 +43,15 @@ abstract class BaseScripts
 
     /**
      * Override to change the paths scanned for OpenAPI attributes.
+     * The package's Trait directory is always included so that models using
+     * the Oa* traits keep their properties in the generated schema.
      */
     protected function getOpenApiScanPaths(): array
     {
-        return [$this->workdir . '/src'];
+        return [
+            $this->workdir . '/src',
+            __DIR__ . '/../Trait',
+        ];
     }
 
     /**
@@ -335,6 +340,22 @@ abstract class BaseScripts
 
         $tableDefinition = $executor->getIterator("EXPLAIN " . strtolower($table))->toArray();
         $tableIndexes = $executor->getIterator("SHOW INDEX FROM " . strtolower($table))->toArray();
+
+        $data = $this->buildCodegenData($table, $tableDefinition, $tableIndexes, $isActiveRecord);
+
+        if (in_array("--debug", $arguments)) {
+            print_r($data);
+        }
+
+        $this->generateArtifacts($arguments, $data, $isActiveRecord, $save, $table);
+    }
+
+    /**
+     * Convert raw EXPLAIN/SHOW INDEX rows into the template data array.
+     * Kept separate from runCodeGenerator so it can be tested without a database.
+     */
+    protected function buildCodegenData(string $table, array $tableDefinition, array $tableIndexes, bool $isActiveRecord): array
+    {
         $autoIncrement = false;
 
         foreach ($tableDefinition as $key => $field) {
@@ -430,7 +451,7 @@ abstract class BaseScripts
             if ($field['field'] == 'deleted_at') $hasDeletedAt = true;
         }
 
-        $data = [
+        return [
             'namespace' => $this->getAppNamespace(),
             'autoIncrement' => $autoIncrement ? 'yes' : 'no',
             'restTag' => ucwords(explode('_', strtolower($table))[0]),
@@ -452,49 +473,58 @@ abstract class BaseScripts
             'hasUpdatedAt' => $hasUpdatedAt,
             'hasDeletedAt' => $hasDeletedAt,
         ];
+    }
 
-        if (in_array("--debug", $arguments)) {
-            print_r($data);
-        }
-
+    /**
+     * Render a single codegen template (e.g. 'model.php') with the given data.
+     */
+    protected function renderCodegenTemplate(string $templateName, array $data): string
+    {
         $loader = new FileSystemLoader($this->getCodegenTemplatePath());
+        return $loader->getTemplate($templateName)->render($data);
+    }
 
+    /**
+     * @throws TemplateParseException
+     */
+    protected function generateArtifacts(array $arguments, array $data, bool $isActiveRecord, bool $save, string $table): void
+    {
         if (in_array('all', $arguments) || in_array('model', $arguments)) {
             $modelType = $isActiveRecord ? "ActiveRecord Model" : "Model";
             echo "Processing $modelType for table $table...\n";
-            $template = $loader->getTemplate('model.php');
+            $rendered = $this->renderCodegenTemplate('model.php', $data);
             if ($save) {
                 $file = $this->workdir . '/src/Model/' . $data['className'] . '.php';
-                file_put_contents($file, $template->render($data));
+                file_put_contents($file, $rendered);
                 echo "File saved in $file\n";
             } else {
-                print_r($template->render($data));
+                print_r($rendered);
             }
         }
 
         if (!$isActiveRecord && (in_array('all', $arguments) || in_array('repo', $arguments) || in_array('repository', $arguments))) {
             echo "Processing Repository for table $table...\n";
-            $template = $loader->getTemplate('repository.php');
+            $rendered = $this->renderCodegenTemplate('repository.php', $data);
             if ($save) {
                 $file = $this->workdir . '/src/Repository/' . $data['className'] . 'Repository.php';
-                file_put_contents($file, $template->render($data));
+                file_put_contents($file, $rendered);
                 echo "File saved in $file\n";
                 $this->addToConfig($this->workdir . '/config/dev/04-repositories.php', $data['className'] . 'Repository', $data['namespace']);
             } else {
-                print_r($template->render($data));
+                print_r($rendered);
             }
         }
 
         if (!$isActiveRecord && (in_array('all', $arguments) || in_array('service', $arguments))) {
             echo "Processing Service for table $table...\n";
-            $template = $loader->getTemplate('service.php');
+            $rendered = $this->renderCodegenTemplate('service.php', $data);
             if ($save) {
                 $file = $this->workdir . '/src/Service/' . $data['className'] . 'Service.php';
-                file_put_contents($file, $template->render($data));
+                file_put_contents($file, $rendered);
                 echo "File saved in $file\n";
                 $this->addToConfig($this->workdir . '/config/dev/05-services.php', $data['className'] . 'Service', $data['namespace']);
             } else {
-                print_r($template->render($data));
+                print_r($rendered);
             }
         }
 
@@ -502,25 +532,25 @@ abstract class BaseScripts
             $restType = $isActiveRecord ? "ActiveRecord Controller" : "Controller";
             $templateName = $isActiveRecord ? 'restactiverecord.php' : 'rest.php';
             echo "Processing $restType for table $table...\n";
-            $template = $loader->getTemplate($templateName);
+            $rendered = $this->renderCodegenTemplate($templateName, $data);
             if ($save) {
                 $file = $this->workdir . '/src/Controller/' . $data['className'] . 'Controller.php';
-                file_put_contents($file, $template->render($data));
+                file_put_contents($file, $rendered);
                 echo "File saved in $file\n";
             } else {
-                print_r($template->render($data));
+                print_r($rendered);
             }
         }
 
         if (in_array('all', $arguments) || in_array('test', $arguments)) {
             echo "Processing Test for table $table...\n";
-            $template = $loader->getTemplate('test.php');
+            $rendered = $this->renderCodegenTemplate('test.php', $data);
             if ($save) {
                 $file = $this->workdir . '/tests/Rest/' . $data['className'] . 'Test.php';
-                file_put_contents($file, $template->render($data));
+                file_put_contents($file, $rendered);
                 echo "File saved in $file\n";
             } else {
-                print_r($template->render($data));
+                print_r($rendered);
             }
         }
     }
