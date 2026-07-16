@@ -1,6 +1,6 @@
 {
-  "name": "byjg/gluo",
-  "description": "Gluo — the glue that binds byjg components into a REST architecture: base classes, attributes, utilities, and builder tools for the byjg REST scaffold.",
+  "name": "byjg/gluo-core",
+  "description": "Gluo framework core — the glue that binds byjg components into a REST architecture: base classes, attributes, utilities, and builder tools. Start a project with `composer create-project byjg/gluo`.",
   "type": "library",
   "license": "MIT",
   "minimum-stability": "dev",
