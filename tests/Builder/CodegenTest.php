@@ -96,6 +96,32 @@ class CodegenTest extends TestCase
         $this->assertSame('isActive', $data['indexes'][1]['camelColumnName']);
     }
 
+    /**
+     * Pins the template-variable contract documented in the byjg/gluo starter
+     * (docs/guides/templates.md). Renaming, adding or removing a key must fail
+     * here so the docs and custom user templates are updated together.
+     */
+    public function testCodegenDataMatchesDocumentedContract(): void
+    {
+        $data = $this->buildData();
+
+        $this->assertEqualsCanonicalizing([
+            'namespace', 'className', 'tableName', 'varTableName', 'restPath', 'restTag',
+            'fields', 'primaryKeys', 'nullableFields', 'nonNullableFields', 'indexes',
+            'autoIncrement', 'activerecord', 'hasCreatedAt', 'hasUpdatedAt', 'hasDeletedAt',
+        ], array_keys($data));
+
+        foreach ($data['fields'] as $field) {
+            $this->assertEqualsCanonicalizing([
+                'field', 'property', 'type', 'php_type', 'openapi_type', 'openapi_format',
+                'null', 'key', 'default', 'extra',
+            ], array_keys($field), "Field variable contract changed for column '{$field['field']}'");
+        }
+
+        $this->assertFalse($data['activerecord']);
+        $this->assertTrue($this->buildData(true)['activerecord']);
+    }
+
     protected function assertValidPhp(string $code): void
     {
         try {
