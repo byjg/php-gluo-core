@@ -242,13 +242,13 @@ abstract class BaseScripts
             "  down                  Migrate down to a specific version or 0\n" .
             "  update                Intelligently migrate up or down to a specific version\n\n" .
             "Options:\n" .
-            "  -u, --version <ver>   Target version for migration\n" .
+            "  -u=N, --version=N     Target version for migration\n" .
             "  --force               Force migration even if database is in partial state\n" .
             "  --no-transaction      Disable transaction support\n" .
             "  -v, -vv, -vvv         Increase verbosity\n\n" .
             "Examples:\n" .
             "  APP_ENV=dev composer migrate -- version\n" .
-            "  APP_ENV=dev composer migrate -- reset --version 5\n" .
+            "  APP_ENV=dev composer migrate -- reset --version=5\n" .
             "  composer migrate -- --env=dev up -vv\n";
     }
 
@@ -546,7 +546,7 @@ abstract class BaseScripts
             echo "Processing Test for table $table...\n";
             $rendered = $this->renderCodegenTemplate('test.php', $data);
             if ($save) {
-                $file = $this->workdir . '/tests/Rest/' . $data['className'] . 'Test.php';
+                $file = $this->workdir . '/tests/Controller/' . $data['className'] . 'Test.php';
                 file_put_contents($file, $rendered);
                 echo "File saved in $file\n";
             } else {
