@@ -319,7 +319,7 @@ abstract class BaseScripts
         $isActiveRecord = in_array("--activerecord", $arguments);
 
         $foundArguments = [];
-        $validArguments = ['model', 'repo', 'repository', 'service', 'rest', 'test', 'all', "--save", "--debug", "--env", "--activerecord", "--table"];
+        $validArguments = ['model', 'repo', 'repository', 'service', 'controller', 'test', 'all', "--save", "--debug", "--env", "--activerecord", "--table"];
         foreach ($arguments as $argument) {
             if (str_starts_with($argument, "--env=") || str_starts_with($argument, "--table=")) {
                 continue;
@@ -528,9 +528,9 @@ abstract class BaseScripts
             }
         }
 
-        if (in_array('all', $arguments) || in_array('rest', $arguments)) {
+        if (in_array('all', $arguments) || in_array('controller', $arguments)) {
             $restType = $isActiveRecord ? "ActiveRecord Controller" : "Controller";
-            $templateName = $isActiveRecord ? 'restactiverecord.php' : 'rest.php';
+            $templateName = $isActiveRecord ? 'controlleractiverecord.php' : 'controller.php';
             echo "Processing $restType for table $table...\n";
             $rendered = $this->renderCodegenTemplate($templateName, $data);
             if ($save) {
@@ -568,7 +568,7 @@ abstract class BaseScripts
             "  model                 Generate Model\n" .
             "  repo|repository       Generate Repository (Repository pattern only)\n" .
             "  service               Generate Service (Repository pattern only)\n" .
-            "  rest                  Generate REST controller\n" .
+            "  controller            Generate REST controller\n" .
             "  test                  Generate Test\n\n" .
             "Options:\n" .
             "  --activerecord        Use ActiveRecord pattern instead of Repository pattern\n" .

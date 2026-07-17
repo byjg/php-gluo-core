@@ -140,7 +140,7 @@ class CodegenTest extends TestCase
 
     public function testRenderRestTemplate(): void
     {
-        $code = $this->scripts->callRenderCodegenTemplate('rest.php', $this->buildData());
+        $code = $this->scripts->callRenderCodegenTemplate('controller.php', $this->buildData());
 
         $this->assertValidPhp($code);
         $this->assertStringContainsString('use ByJG\Gluo\Attribute\RequireAuthenticated;', $code);
@@ -166,7 +166,7 @@ class CodegenTest extends TestCase
         $this->assertValidPhp($model);
         $this->assertStringContainsString('use ByJG\MicroOrm\Trait\ActiveRecord;', $model);
 
-        $rest = $this->scripts->callRenderCodegenTemplate('restactiverecord.php', $data);
+        $rest = $this->scripts->callRenderCodegenTemplate('controlleractiverecord.php', $data);
         $this->assertValidPhp($rest);
         $this->assertStringContainsString('use ByJG\Gluo\Attribute\RequireAuthenticated;', $rest);
         $this->assertStringContainsString('class ProductItemController', $rest);
