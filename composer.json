@@ -8,7 +8,7 @@
   "require": {
     "php": ">=8.3 <8.6",
     "byjg/cache-engine": "^6.0",
-    "byjg/config": "6.0.x-dev",
+    "byjg/config": "^6.1",
     "byjg/anydataset-db": "^7.0",
     "byjg/micro-orm": "^7.0",
     "byjg/authuser": "^7.0",
