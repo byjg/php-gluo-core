@@ -1,16 +1,16 @@
 # Gluo Core
 
-[![Build Status](https://github.com/byjg/gluo-core/actions/workflows/phpunit.yml/badge.svg?branch=master)](https://github.com/byjg/gluo-core/actions/workflows/phpunit.yml)
+[![Build Status](https://github.com/byjg/php-gluo-core/actions/workflows/phpunit.yml/badge.svg?branch=master)](https://github.com/byjg/php-gluo-core/actions/workflows/phpunit.yml)
 [![Opensource ByJG](https://img.shields.io/badge/opensource-byjg-success.svg)](http://opensource.byjg.com)
-[![GitHub source](https://img.shields.io/badge/Github-source-informational?logo=github)](https://github.com/byjg/gluo-core/)
-[![GitHub license](https://img.shields.io/github/license/byjg/gluo-core.svg)](https://opensource.byjg.com/opensource/licensing.html)
-[![GitHub release](https://img.shields.io/github/release/byjg/gluo-core.svg)](https://github.com/byjg/gluo-core/releases/)
+[![GitHub source](https://img.shields.io/badge/Github-source-informational?logo=github)](https://github.com/byjg/php-gluo-core/)
+[![GitHub license](https://img.shields.io/github/license/byjg/php-gluo-core.svg)](https://opensource.byjg.com/opensource/licensing.html)
+[![GitHub release](https://img.shields.io/github/release/byjg/php-gluo-core.svg)](https://github.com/byjg/php-gluo-core/releases/)
 
 The Gluo framework core — the glue ("gluo" is Esperanto for glue) that binds the
 [byjg components](https://opensource.byjg.com) into a REST architecture.
 
 You normally don't install this package directly. Start a project with the
-[byjg/gluo](https://github.com/byjg/gluo) starter instead:
+[byjg/gluo](https://github.com/byjg/php-gluo) starter instead:
 
 ```bash
 composer create-project byjg/gluo my-api
@@ -40,7 +40,7 @@ composer require byjg/gluo-core
 ## Documentation
 
 The full documentation (getting started, guides, and reference) lives in the
-[byjg/gluo](https://github.com/byjg/gluo) starter repository.
+[byjg/gluo](https://github.com/byjg/php-gluo) starter repository.
 
 ## Running the tests
 
