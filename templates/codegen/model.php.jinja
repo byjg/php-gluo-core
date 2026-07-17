@@ -10,6 +10,7 @@ use ByJG\MicroOrm\Literal\LiteralInterface;
 use ByJG\MicroOrm\Literal\HexUuidLiteral;
 {% if activerecord %}use ByJG\MicroOrm\Query;
 use ByJG\MicroOrm\Trait\ActiveRecord;
+use RuntimeException;
 {% endif %}use OpenApi\Attributes as OA;
 {% if hasCreatedAt %}use ByJG\Gluo\Trait\OaCreatedAt;
 {% endif %}{% if hasUpdatedAt %}use ByJG\Gluo\Trait\OaUpdatedAt;
@@ -71,6 +72,9 @@ class {{ className }}
      */
     public static function getBy{{ index.camelColumnName | capitalize }}(${{ index.camelColumnName }}): ?array
     {
+        if (self::$repository === null) {
+            throw new RuntimeException("Repository not initialized");
+        }
         $query = Query::getInstance()
             ->table(self::$repository->getMapper()->getTable(), 'alias')
             ->where('alias.{{ index.column_name }} = :value', ['value' => ${{ index.camelColumnName }}]);

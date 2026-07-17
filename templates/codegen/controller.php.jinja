@@ -147,7 +147,7 @@ class {{ className }}Controller
     public function list{{ className }}(HttpResponse $response, HttpRequest $request): void
     {
         ${{ varTableName }}Service = Config::get({{ className }}Service::class);
-        $result = ${{ varTableName }}Service->list($request->queryString('page', 0), $request->queryString('size', 50));
+        $result = ${{ varTableName }}Service->list((int)($request->queryString('page') ?? 0), (int)($request->queryString('size') ?? 50));
         $response->write($result);
     }
 

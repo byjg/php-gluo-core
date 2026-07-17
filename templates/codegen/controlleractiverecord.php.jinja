@@ -130,7 +130,7 @@ class {{ className }}Controller
     public function list{{ className }}(HttpResponse $response, HttpRequest $request): void
     {
         // Get all records with pagination (default is page 0, limit 50)
-        $models = {{ className }}::all($request->queryString('page', 0), $request->queryString('size', 50));
+        $models = {{ className }}::all((int)($request->queryString('page') ?? 0), (int)($request->queryString('size') ?? 50));
         $response->write($models);
     }
 
