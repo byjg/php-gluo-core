@@ -30,15 +30,40 @@ class BaseScriptsTest extends TestCase
         foreach ($this->tempPaths as $path) {
             if (is_file($path)) {
                 unlink($path);
+            } elseif (is_dir($path)) {
+                $this->removeDir($path);
             }
         }
+    }
+
+    protected function removeDir(string $dir): void
+    {
+        foreach (scandir($dir) as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $path = $dir . '/' . $item;
+            is_dir($path) ? $this->removeDir($path) : unlink($path);
+        }
+        rmdir($dir);
     }
 
     protected function makeTempDir(): string
     {
         $dir = sys_get_temp_dir() . '/gluo-scripts-' . uniqid();
         mkdir($dir, 0755, true);
+        $this->tempPaths[] = $dir;
         return $dir;
+    }
+
+    protected function makeConfigFile(): string
+    {
+        $baseFile = tempnam(sys_get_temp_dir(), 'gluo-config-');
+        $configFile = $baseFile . '.php';
+        $this->tempPaths[] = $baseFile;
+        $this->tempPaths[] = $configFile;
+        file_put_contents($configFile, "<?php\n\nuse ByJG\\Config\\DependencyInjection as DI;\n\nreturn [\n];\n");
+        return $configFile;
     }
 
     public function testDefaultAppNamespace(): void
@@ -105,9 +130,7 @@ class BaseScriptsTest extends TestCase
 
     public function testAddToConfigInsertsUseStatementAndBinding(): void
     {
-        $configFile = tempnam(sys_get_temp_dir(), 'gluo-config-') . '.php';
-        $this->tempPaths[] = $configFile;
-        file_put_contents($configFile, "<?php\n\nuse ByJG\\Config\\DependencyInjection as DI;\n\nreturn [\n];\n");
+        $configFile = $this->makeConfigFile();
 
         $this->scripts->callAddToConfig($configFile, 'ProductRepository', 'App');
 
@@ -120,9 +143,7 @@ class BaseScriptsTest extends TestCase
 
     public function testAddToConfigUsesServiceNamespaceForServices(): void
     {
-        $configFile = tempnam(sys_get_temp_dir(), 'gluo-config-') . '.php';
-        $this->tempPaths[] = $configFile;
-        file_put_contents($configFile, "<?php\n\nuse ByJG\\Config\\DependencyInjection as DI;\n\nreturn [\n];\n");
+        $configFile = $this->makeConfigFile();
 
         $this->scripts->callAddToConfig($configFile, 'ProductService', 'App');
 
@@ -132,9 +153,7 @@ class BaseScriptsTest extends TestCase
 
     public function testAddToConfigIsIdempotent(): void
     {
-        $configFile = tempnam(sys_get_temp_dir(), 'gluo-config-') . '.php';
-        $this->tempPaths[] = $configFile;
-        file_put_contents($configFile, "<?php\n\nuse ByJG\\Config\\DependencyInjection as DI;\n\nreturn [\n];\n");
+        $configFile = $this->makeConfigFile();
 
         $this->scripts->callAddToConfig($configFile, 'ProductRepository', 'App');
         $afterFirstRun = file_get_contents($configFile);

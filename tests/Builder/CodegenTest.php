@@ -9,14 +9,22 @@ use PHPUnit\Framework\TestCase;
 class CodegenTest extends TestCase
 {
     protected ExposedScripts $scripts;
+    protected string $workdir;
 
     protected function setUp(): void
     {
         $this->scripts = new ExposedScripts();
         // Point workdir to an empty dir so template lookup falls back to the package templates
-        $workdir = sys_get_temp_dir() . '/gluo-codegen-' . uniqid();
-        mkdir($workdir, 0755, true);
-        $this->scripts->setWorkdir($workdir);
+        $this->workdir = sys_get_temp_dir() . '/gluo-codegen-' . uniqid();
+        mkdir($this->workdir, 0755, true);
+        $this->scripts->setWorkdir($this->workdir);
+    }
+
+    protected function tearDown(): void
+    {
+        if (is_dir($this->workdir)) {
+            rmdir($this->workdir);
+        }
     }
 
     /**
