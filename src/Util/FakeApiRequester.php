@@ -26,6 +26,7 @@ use Psr\Container\NotFoundExceptionInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Psr\SimpleCache\InvalidArgumentException;
 use ReflectionException;
 
@@ -51,8 +52,11 @@ class FakeApiRequester extends AbstractRequester
     #[Override]
     protected function handleRequest(RequestInterface $request): ResponseInterface
     {
-        $mock = new MockServer(Config::get(LoggerInterface::class));
-        $mock->withMiddleware(Config::get(JwtMiddleware::class));
+        $logger = Config::has(LoggerInterface::class) ? Config::get(LoggerInterface::class) : new NullLogger();
+        $mock = new MockServer($logger);
+        if (Config::has(JwtMiddleware::class)) {
+            $mock->withMiddleware(Config::get(JwtMiddleware::class));
+        }
         $mock->withRequestObject($request);
         $mock->handle(Config::get(OpenApiRouteList::class), false, false);
 
