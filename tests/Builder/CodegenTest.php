@@ -114,12 +114,44 @@ class CodegenTest extends TestCase
         foreach ($data['fields'] as $field) {
             $this->assertEqualsCanonicalizing([
                 'field', 'property', 'type', 'php_type', 'openapi_type', 'openapi_format',
-                'null', 'key', 'default', 'extra',
+                'null', 'key', 'default', 'extra', 'parent_table',
             ], array_keys($field), "Field variable contract changed for column '{$field['field']}'");
         }
 
         $this->assertFalse($data['activerecord']);
         $this->assertTrue($this->buildData(true)['activerecord']);
+    }
+
+    public function testForeignKeyParentTable(): void
+    {
+        // A table with two FK columns: an int FK and a binary(16) UUID FK.
+        $tableDefinition = [
+            ['field' => 'id', 'type' => 'int(11)', 'null' => 'NO', 'key' => 'PRI', 'default' => null, 'extra' => 'auto_increment'],
+            ['field' => 'category_id', 'type' => 'int(11)', 'null' => 'NO', 'key' => 'MUL', 'default' => null, 'extra' => ''],
+            ['field' => 'owner_id', 'type' => 'binary(16)', 'null' => 'NO', 'key' => 'MUL', 'default' => null, 'extra' => ''],
+            ['field' => 'name', 'type' => 'varchar(120)', 'null' => 'NO', 'key' => '', 'default' => null, 'extra' => ''],
+        ];
+        $foreignKeys = [
+            ['column_name' => 'category_id', 'referenced_table_name' => 'category'],
+            ['column_name' => 'owner_id', 'referenced_table_name' => 'users'],
+        ];
+
+        $data = $this->scripts->callBuildCodegenData('product', $tableDefinition, [], false, $foreignKeys);
+        $byField = array_column($data['fields'], null, 'field');
+
+        // FK columns carry the referenced table; everything else is empty.
+        $this->assertSame('category', $byField['category_id']['parent_table']);
+        $this->assertSame('users', $byField['owner_id']['parent_table']);
+        $this->assertSame('', $byField['name']['parent_table']);
+        $this->assertSame('', $byField['id']['parent_table']);
+
+        // The model template emits parentTable for FK columns (Uuid variant for the binary FK).
+        $code = $this->scripts->callRenderCodegenTemplate('model.php', $data);
+        $this->assertValidPhp($code);
+        $this->assertStringContainsString('#[FieldAttribute(fieldName: "category_id", parentTable: "category")]', $code);
+        $this->assertStringContainsString('#[FieldUuidAttribute(fieldName: "owner_id", parentTable: "users")]', $code);
+        // A non-FK column stays plain.
+        $this->assertStringContainsString('#[FieldAttribute(fieldName: "name")]', $code);
     }
 
     protected function assertValidPhp(string $code): void

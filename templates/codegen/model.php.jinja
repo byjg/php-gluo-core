@@ -38,7 +38,7 @@ class {{ className }}
      * @var {{ field.php_type }}{% if 'binary' in field.type %}|LiteralInterface{% endif %}|null
      */
     #[OA\Property(type: "{{ field.openapi_type }}", format: "{{ field.openapi_format }}"{% if field.null == "YES" %}, nullable: true{% endif %})]
-    #[Field{% if 'binary' in field.type %}Uuid{% endif %}Attribute({% if field.key == "PRI" %}primaryKey: true, {% endif %}fieldName: "{{ field.field }}"{% if 'VIRTUAL' in field.extra %}, syncWithDb: false{% endif %})]
+    #[Field{% if 'binary' in field.type %}Uuid{% endif %}Attribute({% if field.key == "PRI" %}primaryKey: true, {% endif %}fieldName: "{{ field.field }}"{% if 'VIRTUAL' in field.extra %}, syncWithDb: false{% endif %}{% if field.parent_table %}, parentTable: "{{ field.parent_table }}"{% endif %})]
     protected {{ field.php_type }}{% if 'binary' in field.type %}|LiteralInterface{% endif %}|null ${{ field.property }} = null;
 {% endif %}{% endfor %}
 

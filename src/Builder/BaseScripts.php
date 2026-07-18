@@ -341,7 +341,15 @@ abstract class BaseScripts
         $tableDefinition = $executor->getIterator("EXPLAIN " . strtolower($table))->toArray();
         $tableIndexes = $executor->getIterator("SHOW INDEX FROM " . strtolower($table))->toArray();
 
-        $data = $this->buildCodegenData($table, $tableDefinition, $tableIndexes, $isActiveRecord);
+        // Foreign keys, so the generated model can declare parentTable for FK columns.
+        // MySQL-specific (information_schema), consistent with the EXPLAIN/SHOW INDEX above.
+        $foreignKeys = $executor->getIterator(
+            "SELECT column_name, referenced_table_name FROM information_schema.key_column_usage "
+            . "WHERE table_schema = database() AND table_name = :t AND referenced_table_name IS NOT NULL",
+            ['t' => strtolower($table)]
+        )->toArray();
+
+        $data = $this->buildCodegenData($table, $tableDefinition, $tableIndexes, $isActiveRecord, $foreignKeys);
 
         if (in_array("--debug", $arguments)) {
             print_r($data);
@@ -354,9 +362,17 @@ abstract class BaseScripts
      * Convert raw EXPLAIN/SHOW INDEX rows into the template data array.
      * Kept separate from runCodeGenerator so it can be tested without a database.
      */
-    protected function buildCodegenData(string $table, array $tableDefinition, array $tableIndexes, bool $isActiveRecord): array
+    protected function buildCodegenData(string $table, array $tableDefinition, array $tableIndexes, bool $isActiveRecord, array $foreignKeys = []): array
     {
         $autoIncrement = false;
+
+        // Map FK column name -> referenced (parent) table, for parentTable in the model.
+        $parentTableByColumn = [];
+        foreach ($foreignKeys as $fk) {
+            if (!empty($fk['column_name']) && !empty($fk['referenced_table_name'])) {
+                $parentTableByColumn[$fk['column_name']] = $fk['referenced_table_name'];
+            }
+        }
 
         foreach ($tableDefinition as $key => $field) {
             $type = preg_replace('/\(.*/', '', $field['type']);
@@ -364,6 +380,9 @@ abstract class BaseScripts
             $tableDefinition[$key]['property'] = preg_replace_callback('/_(.?)/', function ($matches) {
                 return strtoupper($matches[1]);
             }, $field['field']);
+
+            // Parent table for a foreign-key column (empty string when not an FK).
+            $tableDefinition[$key]['parent_table'] = $parentTableByColumn[$field['field']] ?? '';
 
             if ($field['extra'] == 'auto_increment') {
                 $autoIncrement = true;

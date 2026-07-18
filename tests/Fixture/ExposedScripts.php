@@ -31,9 +31,9 @@ class ExposedScripts extends BaseScripts
         return $this->getEnvironment($argumentList, 'help text');
     }
 
-    public function callBuildCodegenData(string $table, array $tableDefinition, array $tableIndexes, bool $isActiveRecord): array
+    public function callBuildCodegenData(string $table, array $tableDefinition, array $tableIndexes, bool $isActiveRecord, array $foreignKeys = []): array
     {
-        return $this->buildCodegenData($table, $tableDefinition, $tableIndexes, $isActiveRecord);
+        return $this->buildCodegenData($table, $tableDefinition, $tableIndexes, $isActiveRecord, $foreignKeys);
     }
 
     public function callRenderCodegenTemplate(string $templateName, array $data): string
