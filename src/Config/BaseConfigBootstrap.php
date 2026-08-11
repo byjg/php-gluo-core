@@ -6,9 +6,11 @@ use ByJG\Cache\Psr16\FileSystemCacheEngine;
 use ByJG\Config\ConfigInitializeInterface;
 use ByJG\Config\Definition;
 use ByJG\Config\Environment;
+use Override;
 
 abstract class BaseConfigBootstrap implements ConfigInitializeInterface
 {
+    #[Override]
     public function loadDefinition(?string $env = null): Definition
     {
         $dev = Environment::create('dev');
