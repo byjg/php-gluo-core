@@ -7,17 +7,17 @@
   "prefer-stable": true,
   "require": {
     "php": ">=8.3 <8.6",
-    "byjg/cache-engine": "^6.0",
+    "byjg/cache-engine": "^7.0",
     "byjg/config": "^6.1",
     "byjg/anydataset-db": "^7.0",
     "byjg/micro-orm": "^7.0",
     "byjg/authuser": "^7.0",
-    "byjg/mailwrapper": "^6.0",
+    "byjg/mailwrapper": "^7.0",
     "byjg/restserver": "^7.0",
     "byjg/serializer": "^6.0",
     "byjg/migration": "^7.0",
     "byjg/jinja-php": "^6.0",
-    "byjg/swagger-test": "^6.0",
+    "byjg/swagger-test": "^7.0",
     "zircote/swagger-php": "^6.2"
   },
   "require-dev": {
