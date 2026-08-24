@@ -205,6 +205,15 @@ class CodegenTest extends TestCase
         $this->assertStringContainsString('use ByJG\Gluo\Attribute\RequireRole;', $code);
         $this->assertStringContainsString('use ByJG\Gluo\Attribute\ValidateRequest;', $code);
         $this->assertStringContainsString('class ProductItemController', $code);
+
+        // The Server resolves controllers from the container, so a generated controller
+        // takes its service through the constructor instead of pulling it per method.
+        $this->assertStringContainsString(
+            'public function __construct(protected ProductItemService $productItemService)',
+            $code
+        );
+        $this->assertStringContainsString('$this->productItemService->getOrFail(', $code);
+        $this->assertStringNotContainsString('Config::get(', $code);
     }
 
     public function testRenderTestTemplate(): void

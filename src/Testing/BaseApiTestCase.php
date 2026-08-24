@@ -22,7 +22,13 @@ abstract class BaseApiTestCase extends TestCase
     #[Override]
     protected function setUp(): void
     {
-        $this->setSchema(Schema::getInstance(file_get_contents($this->getOpenApiPath())));
+        $openApiPath = $this->getOpenApiPath();
+        $openApiJson = file_get_contents($openApiPath);
+        if ($openApiJson === false) {
+            throw new Exception("Could not read the OpenAPI definition at $openApiPath");
+        }
+
+        $this->setSchema(Schema::getInstance($openApiJson));
         $this->resetDb();
     }
 
@@ -65,7 +71,7 @@ abstract class BaseApiTestCase extends TestCase
     public function resetDb(): void
     {
         if (!self::$databaseReset) {
-            if (Config::definition()->getCurrentEnvironment() != "test") {
+            if (Config::definition()?->getCurrentEnvironment() != "test") {
                 throw new Exception("This test can only be executed in test environment");
             }
             Migration::registerDatabase($this->getDatabaseClass());

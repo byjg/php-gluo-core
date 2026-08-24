@@ -26,11 +26,13 @@ use ReflectionException;
 
 abstract class BaseScripts
 {
-    protected string|false $workdir;
+    protected string $workdir;
 
     public function __construct()
     {
-        $this->workdir = realpath(__DIR__ . '/../../../../..');
+        // realpath() returns false when the package is not installed under a project
+        // (e.g. running the package's own test suite); the unresolved path is still correct.
+        $this->workdir = realpath(__DIR__ . '/../../../../..') ?: dirname(__DIR__, 5);
     }
 
     /**
@@ -118,10 +120,10 @@ abstract class BaseScripts
         putenv("APP_ENV=$env");
         Config::reset();
 
-        $dbConnection = Config::get('DBDRIVER_CONNECTION');
+        $dbConnection = (string) Config::get('DBDRIVER_CONNECTION');
 
         echo "> Environment: $env\n";
-        echo "> Database: " . preg_replace('/:[^:]+@/', ':****@', $dbConnection) . "\n\n";
+        echo "> Database: " . (string) preg_replace('/:[^:]+@/', ':****@', $dbConnection) . "\n\n";
 
         $command = null;
         $version = null;
@@ -131,7 +133,7 @@ abstract class BaseScripts
 
         foreach ($filteredArgs as $arg) {
             if (str_starts_with($arg, '--version=') || str_starts_with($arg, '-u=')) {
-                $version = (int) substr($arg, strpos($arg, '=') + 1);
+                $version = (int) (explode('=', $arg, 2)[1] ?? 0);
             } elseif ($arg === '--force') {
                 $force = true;
             } elseif ($arg === '--no-transaction') {
@@ -261,6 +263,9 @@ abstract class BaseScripts
 
     // --- OpenAPI ---
 
+    /**
+     * @throws Exception
+     */
     public function runGenOpenApiDocs(array $arguments): void
     {
         $outputPath = $this->getOpenApiOutputPath();
@@ -271,6 +276,9 @@ abstract class BaseScripts
 
         $generator = (new Generator())->setConfig(["operationId.hash" => false]);
         $openapi = $generator->generate($this->getOpenApiScanPaths());
+        if (is_null($openapi)) {
+            throw new Exception("No OpenAPI annotations found in " . implode(", ", $this->getOpenApiScanPaths()));
+        }
         file_put_contents($outputPath, $openapi->toJson());
     }
 
@@ -289,6 +297,8 @@ abstract class BaseScripts
      */
     public function runCodeGenerator(array $arguments): void
     {
+        $arguments = array_values($arguments);
+
         $table = null;
         foreach ($arguments as $index => $arg) {
             if (str_starts_with($arg, "--table=")) {
@@ -496,11 +506,23 @@ abstract class BaseScripts
 
     /**
      * Render a single codegen template (e.g. 'model.php') with the given data.
+     *
+     * @throws TemplateParseException
+     * @throws Exception
      */
     protected function renderCodegenTemplate(string $templateName, array $data): string
     {
         $loader = new FileSystemLoader($this->getCodegenTemplatePath());
-        return $loader->getTemplate($templateName)->render($data);
+        $rendered = $loader->getTemplate($templateName)->render($data);
+
+        // render() is typed string|array|null for single-expression templates; a file
+        // template always renders to a string. Anything else would be written to disk
+        // as an empty file, so fail loudly instead.
+        if (!is_string($rendered)) {
+            throw new Exception("Template $templateName did not render to a string");
+        }
+
+        return $rendered;
     }
 
     /**
@@ -556,6 +578,9 @@ abstract class BaseScripts
                 $file = $this->workdir . '/src/Controller/' . $data['className'] . 'Controller.php';
                 file_put_contents($file, $rendered);
                 echo "File saved in $file\n";
+                // No DI entry is written: controllers are covered by the Autowire rule in
+                // config/dev/07-controllers.php. Repositories and services still get one,
+                // because those bindings encode decisions a pattern cannot make.
             } else {
                 print_r($rendered);
             }
@@ -624,9 +649,31 @@ abstract class BaseScripts
         return $env;
     }
 
+    /**
+     * Register a generated repository or service in its DI config file.
+     *
+     * Controllers are deliberately absent: they are covered by an Autowire pattern rule,
+     * so there is no per-class entry to write.
+     *
+     * @throws Exception
+     */
     protected function addToConfig(string $configFile, string $className, string $namespace): void
     {
+        // A project generated before this config file existed will not have it. That is
+        // not worth aborting a successful generation for — say what is missing and let
+        // the developer add the binding.
+        if (!file_exists($configFile)) {
+            echo "WARNING: " . basename($configFile) . " not found. "
+                . "Register $className manually, or the container cannot resolve it.\n";
+            return;
+        }
+
+        // The file exists but cannot be read: a permission/IO problem, not a missing
+        // config, so it is not something the developer can work around manually.
         $contents = file_get_contents($configFile);
+        if ($contents === false) {
+            throw new Exception("Could not read $configFile");
+        }
         $modified = false;
 
         $type = str_ends_with($className, 'Repository') ? 'Repository' : 'Service';
