@@ -7,6 +7,21 @@
 
 - None.
 
+## New Features
+
+- `BaseLoginController::getResetEmailSubject()` sets the subject of the password reset
+  email, next to the existing `getResetEmailTemplate()` hook. The subject used to be
+  hard-coded as `"Service - Password Reset"`, a leftover from the template's rename
+  placeholder, which nothing could rename once the code moved into `vendor/`. The default
+  is now `"Password Reset"`; override the hook to brand it:
+
+  ```php
+  protected function getResetEmailSubject(): string
+  {
+      return 'Acme - Password Reset';
+  }
+  ```
+
 ## Requirements
 
 - PHP 8.3, 8.4, 8.5 and 8.6 are now supported: `"php": ">=8.3 <8.7"`.

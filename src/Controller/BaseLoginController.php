@@ -40,6 +40,14 @@ abstract class BaseLoginController
         return 'email_code.html';
     }
 
+    /**
+     * Override to change the subject of the password reset email.
+     */
+    protected function getResetEmailSubject(): string
+    {
+        return 'Password Reset';
+    }
+
     public function post(HttpResponse $response, HttpRequest $request): void
     {
         $json = ValidateRequest::getPayload() ?? [];
@@ -118,7 +126,7 @@ abstract class BaseLoginController
             $usersService->save($user);
 
             $mailWrapper = Config::get(MailWrapperInterface::class);
-            $envelope = Config::get('MAIL_ENVELOPE', [$json["email"], "Service - Password Reset", $this->getResetEmailTemplate(), [
+            $envelope = Config::get('MAIL_ENVELOPE', [$json["email"], $this->getResetEmailSubject(), $this->getResetEmailTemplate(), [
                 "code" => trim(chunk_split($code, 1, ' ')),
                 "expire" => 10
             ]]);
