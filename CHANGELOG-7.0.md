@@ -22,6 +22,14 @@
   }
   ```
 
+## Bug Fixes
+
+- `BaseLoginController::postResetRequest()` validated the request twice: once through the
+  `#[ValidateRequest]` attribute on the route and again with
+  `OpenApiContext::validateRequest()`. It now reads `ValidateRequest::getPayload()`, like
+  `post()`, so the route must keep its `#[ValidateRequest]` attribute (the starter's
+  `LoginController` has it).
+
 ## Requirements
 
 - PHP 8.3, 8.4, 8.5 and 8.6 are now supported: `"php": ">=8.3 <8.7"`.

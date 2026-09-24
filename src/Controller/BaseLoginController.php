@@ -102,7 +102,8 @@ abstract class BaseLoginController
 
     public function postResetRequest(HttpResponse $response, HttpRequest $request): void
     {
-        $json = OpenApiContext::validateRequest($request);
+        // Validated by the #[ValidateRequest] attribute on the route, like post()
+        $json = ValidateRequest::getPayload() ?? [];
 
         if ($json instanceof XmlDocument) {
             throw new Error400Exception("Cannot accept content type xml");
