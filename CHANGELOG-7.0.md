@@ -5,7 +5,25 @@
 
 ## Breaking Changes
 
-- None.
+- `BaseConfigBootstrap` no longer caches the resolved container for `staging` and `prod`.
+  It used `FileSystemCacheEngine` in the system temp dir, which only works when that dir is
+  thrown away on every deploy (e.g. a fresh container); on a cache that outlives the deploy
+  (a shared memcached/Redis, a persistent volume) the new release kept loading the previous
+  release's container. Where the cache lives now is the project's decision, in
+  `config/ConfigBootstrap.php`; the starter template already does it. To keep the previous
+  behaviour in an existing project:
+
+  ```php
+  return new class extends BaseConfigBootstrap {
+      #[\Override]
+      protected function configureDefinition(Definition $definition): void
+      {
+          parent::configureDefinition($definition);
+          $definition->getConfigObject('staging')->withCache(new FileSystemCacheEngine());
+          $definition->getConfigObject('prod')->withCache(new FileSystemCacheEngine());
+      }
+  };
+  ```
 
 ## New Features
 

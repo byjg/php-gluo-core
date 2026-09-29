@@ -2,6 +2,7 @@
 
 namespace ByJGTest\Gluo\Config;
 
+use ByJG\Cache\Psr16\ArrayCacheEngine;
 use ByJG\Config\Definition;
 use ByJG\Gluo\Config\BaseConfigBootstrap;
 use PHPUnit\Framework\TestCase;
@@ -39,13 +40,32 @@ class BaseConfigBootstrapTest extends TestCase
         $this->assertSame(['staging', 'dev'], $inheritNames('prod'));
     }
 
-    public function testCacheOnlyOnStagingAndProd(): void
+    public function testNoConfigCacheByDefault(): void
     {
         $definition = $this->bootstrap()->loadDefinition();
 
-        $this->assertNull($definition->getConfigObject('dev')->getCacheInterface());
-        $this->assertNull($definition->getConfigObject('test')->getCacheInterface());
-        $this->assertNotNull($definition->getConfigObject('staging')->getCacheInterface());
-        $this->assertNotNull($definition->getConfigObject('prod')->getCacheInterface());
+        foreach (['dev', 'test', 'staging', 'prod'] as $env) {
+            $this->assertNull($definition->getConfigObject($env)->getCacheInterface(), $env);
+        }
+    }
+
+    public function testProjectEnablesConfigCache(): void
+    {
+        $cache = new ArrayCacheEngine();
+        $definition = (new class ($cache) extends BaseConfigBootstrap {
+            public function __construct(private ArrayCacheEngine $cache)
+            {
+            }
+
+            #[\Override]
+            protected function configureDefinition(Definition $definition): void
+            {
+                parent::configureDefinition($definition);
+                $definition->getConfigObject('prod')->withCache($this->cache);
+            }
+        })->loadDefinition();
+
+        $this->assertSame($cache, $definition->getConfigObject('prod')->getCacheInterface());
+        $this->assertNull($definition->getConfigObject('staging')->getCacheInterface());
     }
 }
