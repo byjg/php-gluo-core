@@ -1,14 +1,14 @@
 <?php
 
-namespace ByJGTest\Gluo\Repository;
+namespace Tests\Repository;
 
 use ByJG\AnyDataset\Db\DatabaseExecutor;
 use ByJG\AnyDataset\Db\Factory;
 use ByJG\MicroOrm\Mapper;
 use ByJG\MicroOrm\Query;
 use ByJG\MicroOrm\Repository;
-use ByJGTest\Gluo\Fixture\Product;
-use ByJGTest\Gluo\Fixture\ProductRepository;
+use Tests\Fixture\Product;
+use Tests\Fixture\ProductRepository;
 use PHPUnit\Framework\TestCase;
 
 class BaseRepositoryTest extends TestCase

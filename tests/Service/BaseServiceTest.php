@@ -1,14 +1,14 @@
 <?php
 
-namespace ByJGTest\Gluo\Service;
+namespace Tests\Service;
 
 use ByJG\AnyDataset\Db\DatabaseExecutor;
 use ByJG\AnyDataset\Db\Factory;
 use ByJG\RestServer\Exception\Error404Exception;
 use ByJG\RestServer\Exception\Error422Exception;
-use ByJGTest\Gluo\Fixture\Product;
-use ByJGTest\Gluo\Fixture\ProductRepository;
-use ByJGTest\Gluo\Fixture\ProductService;
+use Tests\Fixture\Product;
+use Tests\Fixture\ProductRepository;
+use Tests\Fixture\ProductService;
 use PHPUnit\Framework\TestCase;
 
 class BaseServiceTest extends TestCase

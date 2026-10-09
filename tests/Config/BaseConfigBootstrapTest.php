@@ -1,6 +1,6 @@
 <?php
 
-namespace ByJGTest\Gluo\Config;
+namespace Tests\Config;
 
 use ByJG\Cache\Psr16\ArrayCacheEngine;
 use ByJG\Config\Definition;

@@ -1,6 +1,6 @@
 <?php
 
-namespace ByJGTest\Gluo\Attribute;
+namespace Tests\Attribute;
 
 use ByJG\Gluo\Attribute\RequireAuthenticated;
 use ByJG\Gluo\Attribute\RequireRole;

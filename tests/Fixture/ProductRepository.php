@@ -1,6 +1,6 @@
 <?php
 
-namespace ByJGTest\Gluo\Fixture;
+namespace Tests\Fixture;
 
 use ByJG\AnyDataset\Db\DatabaseExecutor;
 use ByJG\Gluo\Repository\BaseRepository;
