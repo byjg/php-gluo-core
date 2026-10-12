@@ -32,6 +32,38 @@
 
 ## New Features
 
+- `ByJG\Gluo\Console\Launcher`: the `./gluo` command line entry point.
+
+  Built-in commands replace the Composer scripts and run through the project's
+  `Builder\Scripts`, so project overrides still apply:
+
+  | Command | Was |
+  |---|---|
+  | `./gluo migrate:update` (`create`, `version`, `reset`, `up`, `down`) | `composer migrate -- update` |
+  | `./gluo codegen:all --table=x` (`model`, `repository`, `service`, `controller`, `test`) | `composer codegen -- --table=x all` |
+  | `./gluo openapi`, `./gluo openapi:check` | `composer openapi`, `composer openapi:check` |
+  | `./gluo terminal` | `composer terminal` |
+
+  Project commands are declared in `config/commands.php` as
+  `'user:cleanup' => 'App/Service/Maintenance::cleanOldRecords'` and run through
+  Scriptify with the container returned by `config/scriptify-bootstrap.php`. Arguments are
+  positional and map to the method parameters; `./gluo user:cleanup --help` prints the
+  method's PHPDoc.
+
+  `--env=<env>` (also `--env <env>` and `-e <env>`, before or after the command) is
+  consumed by the launcher and exported as `APP_ENV` before Config is initialised.
+
+  `./gluo list` shows both groups; `./gluo list --check` adds a status per command
+  (environment, configuration and database connectivity for the built-ins; name, target,
+  visibility and container registration for project commands, without building them) and
+  exits 1 if any is not `OK`.
+
+  `./gluo migrate <sub>` and `./gluo codegen <components>` without the colon are accepted
+  so the Composer scripts can stay as aliases.
+
+- `BaseScripts::getMigrateHelp()` and `getCodeGeneratorHelp()` are now public, and their
+  text uses the `./gluo` syntax.
+
 - `BaseLoginController::getResetEmailSubject()` sets the subject of the password reset
   email, next to the existing `getResetEmailTemplate()` hook. The subject used to be
   hard-coded as `"Service - Password Reset"`, a leftover from the template's rename
@@ -69,6 +101,7 @@
 - `byjg/micro-orm` is now `^7.0`.
 - `byjg/migration` is now `^7.0`.
 - `byjg/restserver` is now `^7.0`.
+- `byjg/scriptify` `^7.0` is a new requirement: the launcher runs project commands through it.
 - `byjg/serializer` is now `^7.0`.
 - `byjg/swagger-test` is now `^7.0`.
 

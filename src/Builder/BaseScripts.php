@@ -230,28 +230,29 @@ abstract class BaseScripts
         }
     }
 
-    protected function getMigrateHelp(): string
+    public function getMigrateHelp(): string
     {
         return "Usage:\n" .
-            "  APP_ENV=<environment> composer migrate -- <command> [options]\n" .
-            "  composer migrate -- --env=<environment> <command> [options]\n\n" .
+            "  APP_ENV=<environment> ./gluo migrate:<command> [options]\n" .
+            "  ./gluo --env=<environment> migrate:<command> [options]\n\n" .
             $this->getEnvironmentHelpText() .
             "Available Commands:\n" .
-            "  version               Show current database version (alias: status)\n" .
-            "  create                Create migration version table (alias: install)\n" .
-            "  reset                 Reset database to base.sql and optionally migrate to a version\n" .
-            "  up                    Migrate up to a specific version or latest\n" .
-            "  down                  Migrate down to a specific version or 0\n" .
-            "  update                Intelligently migrate up or down to a specific version\n\n" .
+            "  migrate:version       Show current database version (alias: migrate:status)\n" .
+            "  migrate:create        Create migration version table (alias: migrate:install)\n" .
+            "  migrate:reset         Reset database to base.sql and optionally migrate to a version\n" .
+            "  migrate:up            Migrate up to a specific version or latest\n" .
+            "  migrate:down          Migrate down to a specific version or 0\n" .
+            "  migrate:update        Intelligently migrate up or down to a specific version\n\n" .
             "Options:\n" .
             "  -u=N, --version=N     Target version for migration\n" .
             "  --force               Force migration even if database is in partial state\n" .
             "  --no-transaction      Disable transaction support\n" .
             "  -v, -vv, -vvv         Increase verbosity\n\n" .
             "Examples:\n" .
-            "  APP_ENV=dev composer migrate -- version\n" .
-            "  APP_ENV=dev composer migrate -- reset --version=5\n" .
-            "  composer migrate -- --env=dev up -vv\n";
+            "  APP_ENV=dev ./gluo migrate:version\n" .
+            "  ./gluo --env=dev migrate:reset --version=5\n" .
+            "  ./gluo --env=dev migrate:up -vv\n\n" .
+            "The composer script is an alias: composer migrate -- --env=dev update\n";
     }
 
     protected function getEnvironmentHelpText(): string
@@ -604,25 +605,31 @@ abstract class BaseScripts
         }
     }
 
-    protected function getCodeGeneratorHelp(): string
+    public function getCodeGeneratorHelp(): string
     {
         return "Usage:\n" .
-            "  APP_ENV=<environment> composer codegen -- --table=<table_name> <arguments> [options]\n" .
-            "  composer codegen -- --env=<environment> --table=<table_name> <arguments> [options]\n\n" .
+            "  APP_ENV=<environment> ./gluo codegen:<component> --table=<table_name> [options]\n" .
+            "  ./gluo --env=<environment> codegen:<component> --table=<table_name> [options]\n\n" .
             "Required:\n" .
             "  --table=<name>        Database table name\n\n" .
             $this->getEnvironmentHelpText() .
-            "Arguments (at least one required):\n" .
-            "  all                   Generate all components for the selected pattern\n" .
-            "  model                 Generate Model\n" .
-            "  repo|repository       Generate Repository (Repository pattern only)\n" .
-            "  service               Generate Service (Repository pattern only)\n" .
-            "  controller            Generate REST controller\n" .
-            "  test                  Generate Test\n\n" .
+            "Available Commands:\n" .
+            "  codegen:all           Generate all components for the selected pattern\n" .
+            "  codegen:model         Generate Model\n" .
+            "  codegen:repository    Generate Repository (Repository pattern only; alias: codegen:repo)\n" .
+            "  codegen:service       Generate Service (Repository pattern only)\n" .
+            "  codegen:controller    Generate REST controller\n" .
+            "  codegen:test          Generate Test\n\n" .
             "Options:\n" .
             "  --activerecord        Use ActiveRecord pattern instead of Repository pattern\n" .
             "  --save                Save generated files to disk\n" .
-            "  --debug               Show debug information\n";
+            "  --debug               Show debug information\n\n" .
+            "Examples:\n" .
+            "  ./gluo --env=dev codegen:all --table=product --save\n" .
+            "  ./gluo --env=dev codegen:model --table=product --activerecord\n\n" .
+            "Several components in one run, and the composer script alias:\n" .
+            "  ./gluo --env=dev codegen --table=product model controller --save\n" .
+            "  composer codegen -- --env=dev --table=product all --save\n";
     }
 
     protected function extractArguments(array $arguments, bool $hasCmd = true): array
