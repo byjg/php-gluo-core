@@ -237,6 +237,13 @@ class CodegenTest extends TestCase
         $this->assertStringContainsString('$this->productItemService->getOrFail(', $code);
         $this->assertStringNotContainsString('Config::get(', $code);
         $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120)', $code);
+
+        // The list endpoint only documents the query parameters it applies.
+        $this->assertStringContainsString("OrderBy::fromQueryString(\$request->queryString('orderBy'), ProductItem::class)", $code);
+        $this->assertStringContainsString('use App\Model\ProductItem;', $code);
+        $this->assertStringContainsString('use ByJG\Gluo\Util\OrderBy;', $code);
+        $this->assertStringContainsString('name: "orderBy"', $code);
+        $this->assertStringNotContainsString('name: "filter"', $code);
     }
 
     public function testRenderTestTemplate(): void
@@ -261,5 +268,11 @@ class CodegenTest extends TestCase
         $this->assertStringContainsString('use ByJG\Gluo\Attribute\RequireAuthenticated;', $rest);
         $this->assertStringContainsString('class ProductItemController', $rest);
         $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120)', $rest);
+
+        $this->assertStringContainsString("->orderBy(OrderBy::fromQueryString(\$request->queryString('orderBy'), ProductItem::class))", $rest);
+        $this->assertStringContainsString('use ByJG\Gluo\Util\OrderBy;', $rest);
+        $this->assertStringContainsString('use ByJG\MicroOrm\Query;', $rest);
+        $this->assertStringContainsString('name: "orderBy"', $rest);
+        $this->assertStringNotContainsString('name: "filter"', $rest);
     }
 }

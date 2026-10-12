@@ -79,6 +79,19 @@
 
 ## Bug Fixes
 
+- The generated list endpoints documented `orderBy` and `filter` query parameters but
+  only read `page` and `size`. `orderBy` is now applied, through the new
+  `ByJG\Gluo\Util\OrderBy::fromQueryString()`: one or more fields separated by commas,
+  each optionally followed by `asc` or `desc`, accepted only when they are fields of the
+  model (by property or column name) and rejected with a 400 otherwise, so nothing from
+  the request reaches the SQL. `filter` is no longer generated: it had no defined format.
+
+  `BaseService::list()` takes an optional third argument, `$orderBy`, passed to the
+  repository. The generated test gains `testListOrderBy`.
+
+  Controllers generated before this change keep working and keep ignoring both
+  parameters; regenerate the controller, or copy the list method from a new one.
+
 - `BaseLoginController::postResetRequest()` validated the request twice: once through the
   `#[ValidateRequest]` attribute on the route and again with
   `OpenApiContext::validateRequest()`. It now reads `ValidateRequest::getPayload()`, like

@@ -104,6 +104,20 @@ class BaseServiceTest extends TestCase
         $this->assertCount(5, $this->service->list(1, 20));
     }
 
+    public function testListPassesOrderByToTheRepository(): void
+    {
+        foreach (['Banana' => 2.0, 'Apple' => 1.0, 'Cherry' => 3.0] as $name => $price) {
+            $this->service->create(['name' => $name, 'price' => $price]);
+        }
+
+        $names = fn (array $models) => array_map(fn ($model) => $model->getName(), $models);
+
+        $this->assertSame(['Apple', 'Banana', 'Cherry'], $names($this->service->list(0, 10, ['name'])));
+        $this->assertSame(['Cherry', 'Banana', 'Apple'], $names($this->service->list(0, 10, ['price DESC'])));
+        // Without it the rows come back in insertion order, as before.
+        $this->assertSame(['Banana', 'Apple', 'Cherry'], $names($this->service->list(0, 10)));
+    }
+
     public function testDeleteRemovesRow(): void
     {
         $model = $this->service->create(['name' => 'Widget', 'price' => 10.5]);
