@@ -398,6 +398,11 @@ abstract class BaseScripts
                 $autoIncrement = true;
             }
 
+            // Declared length of a char/varchar column, emitted as OpenAPI maxLength (0 when not applicable).
+            $tableDefinition[$key]['openapi_max_length'] = preg_match('/^(?:var)?char\((\d+)\)/i', $field['type'], $matches)
+                ? (int)$matches[1]
+                : 0;
+
             switch ($type) {
                 case 'int':
                 case 'tinyint':

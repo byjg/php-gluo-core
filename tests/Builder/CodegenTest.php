@@ -83,6 +83,25 @@ class CodegenTest extends TestCase
         $this->assertSame(['string', 'string', 'date-time'], [$byField['created_at']['php_type'], $byField['created_at']['openapi_type'], $byField['created_at']['openapi_format']]);
     }
 
+    public function testMaxLengthComesFromCharColumns(): void
+    {
+        $definition = $this->tableDefinition();
+        $definition[] = ['field' => 'code', 'type' => 'char(3)', 'null' => 'NO', 'key' => '', 'default' => null, 'extra' => ''];
+        $definition[] = ['field' => 'owner_id', 'type' => 'binary(16)', 'null' => 'NO', 'key' => '', 'default' => null, 'extra' => ''];
+        $definition[] = ['field' => 'notes', 'type' => 'text', 'null' => 'YES', 'key' => '', 'default' => null, 'extra' => ''];
+
+        $data = $this->scripts->callBuildCodegenData('product_item', $definition, $this->tableIndexes(), false);
+        $byField = array_column($data['fields'], null, 'field');
+
+        $this->assertSame(120, $byField['name']['openapi_max_length']);
+        $this->assertSame(3, $byField['code']['openapi_max_length']);
+        // Lengths that are not a character limit must not become maxLength.
+        $this->assertSame(0, $byField['id']['openapi_max_length']);
+        $this->assertSame(0, $byField['price']['openapi_max_length']);
+        $this->assertSame(0, $byField['owner_id']['openapi_max_length']);
+        $this->assertSame(0, $byField['notes']['openapi_max_length']);
+    }
+
     public function testFieldClassification(): void
     {
         $data = $this->buildData();
@@ -114,7 +133,7 @@ class CodegenTest extends TestCase
         foreach ($data['fields'] as $field) {
             $this->assertEqualsCanonicalizing([
                 'field', 'property', 'type', 'php_type', 'openapi_type', 'openapi_format',
-                'null', 'key', 'default', 'extra', 'parent_table',
+                'null', 'key', 'default', 'extra', 'parent_table', 'openapi_max_length',
             ], array_keys($field), "Field variable contract changed for column '{$field['field']}'");
         }
 
@@ -175,6 +194,9 @@ class CodegenTest extends TestCase
         $this->assertStringContainsString('use ByJG\Gluo\Trait\OaCreatedAt;', $code);
         $this->assertStringContainsString('use ByJG\Gluo\Trait\OaUpdatedAt;', $code);
         $this->assertStringContainsString('use ByJG\Gluo\Trait\OaDeletedAt;', $code);
+        $this->assertStringContainsString('#[OA\Property(type: "string", format: "string", maxLength: 120)]', $code);
+        $this->assertStringContainsString('#[OA\Property(type: "number", format: "double", nullable: true)]', $code);
+        $this->assertSame(1, substr_count($code, 'maxLength'));
     }
 
     public function testRenderRepositoryTemplate(): void
@@ -214,6 +236,7 @@ class CodegenTest extends TestCase
         );
         $this->assertStringContainsString('$this->productItemService->getOrFail(', $code);
         $this->assertStringNotContainsString('Config::get(', $code);
+        $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120)', $code);
     }
 
     public function testRenderTestTemplate(): void
@@ -237,5 +260,6 @@ class CodegenTest extends TestCase
         $this->assertValidPhp($rest);
         $this->assertStringContainsString('use ByJG\Gluo\Attribute\RequireAuthenticated;', $rest);
         $this->assertStringContainsString('class ProductItemController', $rest);
+        $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120)', $rest);
     }
 }
