@@ -160,7 +160,8 @@ class CheckerTest extends LauncherTestCase
             'Bad_Name' => 'Tests/Fixture/LauncherCommands::cleanOldRecords',
             'migrate:update' => 'Tests/Fixture/LauncherCommands::cleanOldRecords',
             'migrate:seed' => 'Tests/Fixture/LauncherCommands::cleanOldRecords',
-            'no:method' => 'Tests/Fixture/LauncherCommands',
+            'no:class:target' => 'Tests/Fixture/DoesNotExist',
+            'tool' => 'Tests/Fixture/LauncherCommands',
             'not:string' => ['Tests/Fixture/LauncherCommands', 'fail'],
             'no:class' => 'Tests/Fixture/DoesNotExist::run',
             'typo:method' => 'Tests/Fixture/LauncherCommands::cleanOldRecord',
@@ -174,7 +175,9 @@ class CheckerTest extends LauncherTestCase
         $this->assertSame(1, $exitCode);
         $this->assertSame('OK', $rows['user:cleanup'][0]);
         $this->assertSame('INVALID_NAME', $rows['Bad_Name'][0]);
-        $this->assertSame('INVALID_TARGET', $rows['no:method'][0]);
+        $this->assertSame('INVALID_TARGET', $rows['no:class:target'][0]);
+        $this->assertSame(['OK', 'Tests/Fixture/LauncherCommands::cleanOldRecords'], $rows['tool:clean-old-records']);
+        $this->assertSame(['OK', 'Tests/Fixture/LauncherCommands::fail'], $rows['tool:fail']);
         $this->assertSame(['INVALID_TARGET'], $rows['not:string']);
         $this->assertSame('MISSING_CLASS', $rows['no:class'][0]);
         $this->assertSame(['MISSING_METHOD', 'Tests/Fixture/LauncherCommands::cleanOldRecord'], $rows['typo:method']);

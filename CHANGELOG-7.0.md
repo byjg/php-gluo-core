@@ -50,6 +50,17 @@
   positional and map to the method parameters; `./gluo user:cleanup --help` prints the
   method's PHPDoc.
 
+  A target without `::` names a class, and every public method it declares becomes a
+  command under that name, in kebab-case: `'payment' => 'App/Command/PaymentCommands'`
+  gives `payment:create`, `payment:clean-old-records`, ... Static, magic (`__*`) and
+  inherited methods are not commands; keep helpers `protected`. Both forms can be mixed,
+  but a name produced twice (an explicit command and a class method, or `fooBar` and
+  `foo_bar`) is refused with an error. A class that does not exist is reported as an
+  invalid target.
+
+  `./gluo list` describes each project command with the first line of its method's PHPDoc,
+  and shows the target when the method has none.
+
   `--env=<env>` (also `--env <env>` and `-e <env>`, before or after the command) is
   consumed by the launcher and exported as `APP_ENV` before Config is initialised.
 

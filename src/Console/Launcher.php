@@ -7,6 +7,8 @@ use ByJG\Scriptify\Console\TerminalCommand;
 use ByJG\Scriptify\Runner;
 use Exception;
 use Psr\Container\ContainerInterface;
+use ReflectionClass;
+use ReflectionMethod;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Input\ArrayInput;
 use Throwable;
@@ -117,6 +119,10 @@ class Launcher
     /**
      * The project command registry: command name => Scriptify target.
      *
+     * A target without "::" names a class: each public method it declares becomes
+     * "<name>:<method-in-kebab-case>". A class that does not exist is kept as it is, so it
+     * is reported as an invalid target.
+     *
      * @return array<array-key, mixed>
      * @throws Exception
      */
@@ -129,11 +135,86 @@ class Launcher
 
         $commands = require $file;
         if (!is_array($commands)) {
-            throw new Exception(self::COMMANDS_FILE . ' must return an array of command name => "Class::method".');
+            throw new Exception(self::COMMANDS_FILE . ' must return an array of command name => "Class::method" or "Class".');
         }
-        ksort($commands);
 
-        return $commands;
+        $expanded = [];
+        foreach ($commands as $name => $target) {
+            $entries = self::expandClassTarget((string) $name, $target) ?? [$name => $target];
+            foreach ($entries as $entryName => $entryTarget) {
+                self::addCommand($expanded, $entryName, $entryTarget);
+            }
+        }
+        ksort($expanded);
+
+        return $expanded;
+    }
+
+    /**
+     * @param array<array-key, mixed> $commands
+     * @throws Exception When the name is already there.
+     */
+    protected static function addCommand(array &$commands, int|string $name, mixed $target): void
+    {
+        if (array_key_exists($name, $commands)) {
+            throw new Exception("Command \"$name\" is defined more than once in " . self::COMMANDS_FILE . '.');
+        }
+        $commands[$name] = $target;
+    }
+
+    /**
+     * @return array<string, string>|null The commands of a class target; null for any other target.
+     * @throws Exception When two methods give the same command name.
+     */
+    protected static function expandClassTarget(string $name, mixed $target): ?array
+    {
+        if (!is_string($target) || str_contains($target, '::')) {
+            return null;
+        }
+        $class = ltrim(Runner::normalize($target), '\\');
+        if (!class_exists($class)) {
+            return null;
+        }
+
+        $entries = [];
+        foreach ((new ReflectionClass($class))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            if ($method->isStatic() || $method->getDeclaringClass()->getName() !== $class || str_starts_with($method->getName(), '__')) {
+                continue;
+            }
+            self::addCommand($entries, $name . ':' . self::toKebabCase($method->getName()), $target . '::' . $method->getName());
+        }
+
+        return $entries;
+    }
+
+    /**
+     * The first line of the target method's PHPDoc, or "" when there is none or the target
+     * does not resolve to a method.
+     */
+    protected static function getSummary(mixed $target): string
+    {
+        if (!is_string($target) || !str_contains($target, '::')) {
+            return '';
+        }
+        [$class, $method] = explode('::', ltrim(Runner::normalize($target), '\\'), 2) + ['', ''];
+        if (!class_exists($class) || !method_exists($class, $method)) {
+            return '';
+        }
+
+        foreach (explode("\n", (string) (new ReflectionMethod($class, $method))->getDocComment()) as $line) {
+            $line = trim((string) preg_replace('~^\s*(/\*\*|\*/|\*)~', '', $line));
+            $line = trim((string) preg_replace('~\*/$~', '', $line));
+            if ($line !== '') {
+                return str_starts_with($line, '@') ? '' : $line;
+            }
+        }
+
+        return '';
+    }
+
+    protected static function toKebabCase(string $method): string
+    {
+        return strtolower((string) preg_replace('/(?<=[a-z0-9])(?=[A-Z])/', '-', str_replace('_', '-', $method)));
     }
 
     /**
@@ -254,7 +335,7 @@ class Launcher
         }
         $target = $projectCommands[$command];
         if (!is_string($target) || !str_contains($target, '::')) {
-            throw new Exception("Invalid target for \"$command\" in " . self::COMMANDS_FILE . ': expected "Namespace/Class::method".');
+            throw new Exception("Invalid target for \"$command\" in " . self::COMMANDS_FILE . ': expected "Namespace/Class::method" or an existing "Namespace/Class".');
         }
 
         // -v belongs to the launcher (stack trace on failure), not to the method.
@@ -385,8 +466,10 @@ class Launcher
 
         echo "\nProject\n";
         $projectCommands = $this->getProjectCommands();
+        // The PHPDoc summary describes the command; the target is the fallback when there is none.
         foreach ($projectCommands as $name => $target) {
-            echo self::formatRow((string) $name, is_string($target) ? $target : '(invalid target)');
+            $summary = self::getSummary($target);
+            echo self::formatRow((string) $name, $summary !== '' ? $summary : (is_string($target) ? $target : '(invalid target)'));
         }
         if ($projectCommands === []) {
             echo "  (none: add them to " . self::COMMANDS_FILE . ")\n";
