@@ -3,6 +3,9 @@
 namespace ByJG\Gluo\Builder;
 
 use ByJG\AnyDataset\Db\DatabaseExecutor;
+use ByJG\AnyDataset\Db\Metadata\ColumnMetadata;
+use ByJG\AnyDataset\Db\Metadata\ForeignKeyMetadata;
+use ByJG\AnyDataset\Db\Metadata\IndexMetadata;
 use ByJG\Config\Config;
 use ByJG\Config\Exception\ConfigException;
 use ByJG\Config\Exception\ConfigNotFoundException;
@@ -349,18 +352,7 @@ abstract class BaseScripts
         /** @var DatabaseExecutor $executor */
         $executor = Config::get(DatabaseExecutor::class);
 
-        $tableDefinition = $executor->getIterator("EXPLAIN " . strtolower($table))->toArray();
-        $tableIndexes = $executor->getIterator("SHOW INDEX FROM " . strtolower($table))->toArray();
-
-        // Foreign keys, so the generated model can declare parentTable for FK columns.
-        // MySQL-specific (information_schema), consistent with the EXPLAIN/SHOW INDEX above.
-        $foreignKeys = $executor->getIterator(
-            "SELECT column_name, referenced_table_name FROM information_schema.key_column_usage "
-            . "WHERE table_schema = database() AND table_name = :t AND referenced_table_name IS NOT NULL",
-            ['t' => strtolower($table)]
-        )->toArray();
-
-        $data = $this->buildCodegenData($table, $tableDefinition, $tableIndexes, $isActiveRecord, $foreignKeys);
+        $data = $this->buildCodegenDataFromDatabase($executor, $table, $isActiveRecord);
 
         if (in_array("--debug", $arguments)) {
             print_r($data);
@@ -370,84 +362,84 @@ abstract class BaseScripts
     }
 
     /**
-     * Convert raw EXPLAIN/SHOW INDEX rows into the template data array.
-     * Kept separate from runCodeGenerator so it can be tested without a database.
+     * Read the table through the database dialect, so codegen works on every database
+     * anydataset-db describes (MySQL, SQLite, PostgreSQL, SQL Server, Oracle).
      */
-    protected function buildCodegenData(string $table, array $tableDefinition, array $tableIndexes, bool $isActiveRecord, array $foreignKeys = []): array
+    protected function buildCodegenDataFromDatabase(DatabaseExecutor $executor, string $table, bool $isActiveRecord): array
+    {
+        $helper = $executor->getHelper();
+        $tableName = strtolower($table);
+
+        return $this->buildCodegenData(
+            $table,
+            $helper->getTableMetadata($executor, $tableName),
+            $helper->getTableIndexes($executor, $tableName),
+            $isActiveRecord,
+            $helper->getTableForeignKeys($executor, $tableName)
+        );
+    }
+
+    /**
+     * Convert the table metadata into the template data array.
+     * Kept separate from runCodeGenerator so it can be tested without a database.
+     *
+     * @param array<array-key, ColumnMetadata> $columns
+     * @param list<IndexMetadata> $indexes
+     * @param list<ForeignKeyMetadata> $foreignKeys
+     */
+    protected function buildCodegenData(string $table, array $columns, array $indexes, bool $isActiveRecord, array $foreignKeys = []): array
     {
         $autoIncrement = false;
 
         // Map FK column name -> referenced (parent) table, for parentTable in the model.
         $parentTableByColumn = [];
-        foreach ($foreignKeys as $fk) {
-            if (!empty($fk['column_name']) && !empty($fk['referenced_table_name'])) {
-                $parentTableByColumn[$fk['column_name']] = $fk['referenced_table_name'];
+        foreach ($foreignKeys as $foreignKey) {
+            foreach ($foreignKey->columns as $column) {
+                $parentTableByColumn[$column] = $foreignKey->parentTable;
             }
         }
 
-        foreach ($tableDefinition as $key => $field) {
-            $type = preg_replace('/\(.*/', '', $field['type']);
-
-            $tableDefinition[$key]['property'] = preg_replace_callback('/_(.?)/', function ($matches) {
-                return strtoupper($matches[1]);
-            }, $field['field']);
-
-            // Parent table for a foreign-key column (empty string when not an FK).
-            $tableDefinition[$key]['parent_table'] = $parentTableByColumn[$field['field']] ?? '';
-
-            if ($field['extra'] == 'auto_increment') {
+        // The template variables keep the names of MySQL's EXPLAIN (field, type, null, key, extra),
+        // which the templates and the projects' own templates are written against.
+        $tableDefinition = [];
+        foreach ($columns as $column) {
+            $extra = [];
+            if ($column->autoIncrement) {
                 $autoIncrement = true;
+                $extra[] = 'auto_increment';
+            }
+            if ($column->generated) {
+                $extra[] = 'VIRTUAL GENERATED';
             }
 
-            // Declared length of a char/varchar column, emitted as OpenAPI maxLength (0 when not applicable).
-            $tableDefinition[$key]['openapi_max_length'] = preg_match('/^(?:var)?char\((\d+)\)/i', $field['type'], $matches)
-                ? (int)$matches[1]
-                : 0;
+            [$phpType, $openapiType, $openapiFormat] = match (preg_replace('/\(.*/', '', $column->dbType)) {
+                'int', 'tinyint', 'smallint' => ['int', 'integer', 'int32'],
+                'mediumint', 'bigint', 'integer' => ['int', 'integer', 'int64'],
+                'float', 'double', 'double precision', 'decimal', 'numeric', 'real' => ['float', 'number', 'double'],
+                'bool', 'boolean' => ['bool', 'boolean', 'boolean'],
+                'date' => ['string', 'string', 'date'],
+                'datetime', 'datetime2', 'timestamp', 'timestamp without time zone', 'timestamp with time zone' => ['string', 'string', 'date-time'],
+                default => ['string', 'string', 'string'],
+            };
 
-            switch ($type) {
-                case 'int':
-                case 'tinyint':
-                case 'smallint':
-                    $tableDefinition[$key]['php_type'] = 'int';
-                    $tableDefinition[$key]['openapi_type'] = 'integer';
-                    $tableDefinition[$key]['openapi_format'] = 'int32';
-                    break;
-                case 'mediumint':
-                case 'bigint':
-                case 'integer':
-                    $tableDefinition[$key]['php_type'] = 'int';
-                    $tableDefinition[$key]['openapi_type'] = 'integer';
-                    $tableDefinition[$key]['openapi_format'] = 'int64';
-                    break;
-                case 'float':
-                case 'double':
-                case 'decimal':
-                    $tableDefinition[$key]['php_type'] = 'float';
-                    $tableDefinition[$key]['openapi_type'] = 'number';
-                    $tableDefinition[$key]['openapi_format'] = 'double';
-                    break;
-                case 'bool':
-                case 'boolean':
-                    $tableDefinition[$key]['php_type'] = 'bool';
-                    $tableDefinition[$key]['openapi_type'] = 'boolean';
-                    $tableDefinition[$key]['openapi_format'] = 'boolean';
-                    break;
-                case 'date':
-                    $tableDefinition[$key]['php_type'] = 'string';
-                    $tableDefinition[$key]['openapi_type'] = 'string';
-                    $tableDefinition[$key]['openapi_format'] = 'date';
-                    break;
-                case 'datetime':
-                case 'timestamp':
-                    $tableDefinition[$key]['php_type'] = 'string';
-                    $tableDefinition[$key]['openapi_type'] = 'string';
-                    $tableDefinition[$key]['openapi_format'] = 'date-time';
-                    break;
-                default:
-                    $tableDefinition[$key]['php_type'] = 'string';
-                    $tableDefinition[$key]['openapi_type'] = 'string';
-                    $tableDefinition[$key]['openapi_format'] = 'string';
-            }
+            $tableDefinition[] = [
+                'field' => $column->name,
+                'property' => preg_replace_callback('/_(.?)/', function ($matches) {
+                    return strtoupper($matches[1]);
+                }, $column->name),
+                'type' => $column->dbType,
+                'null' => $column->required ? 'NO' : 'YES',
+                'key' => $column->primaryKey ? 'PRI' : '',
+                'default' => $column->default,
+                'extra' => implode(' ', $extra),
+                // Parent table for a foreign-key column (empty string when not an FK).
+                'parent_table' => $parentTableByColumn[$column->name] ?? '',
+                'php_type' => $phpType,
+                'openapi_type' => $openapiType,
+                'openapi_format' => $openapiFormat,
+                // Declared length of a char/varchar column, emitted as OpenAPI maxLength (0 when not applicable).
+                'openapi_max_length' => $column->phpType == 'string' && str_contains($column->dbType, 'char') ? (int)$column->length : 0,
+            ];
         }
 
         $nullableFields = [];
@@ -471,10 +463,19 @@ abstract class BaseScripts
             }
         }
 
-        foreach ($tableIndexes as $key => $field) {
-            $tableIndexes[$key]['camelColumnName'] = preg_replace_callback('/_(.?)/', function ($match) {
-                return strtoupper($match[1]);
-            }, $field['column_name']);
+        // One entry per indexed column, with the names of MySQL's SHOW INDEX, as the templates expect.
+        $tableIndexes = [];
+        foreach ($indexes as $index) {
+            foreach ($index->columns as $column) {
+                $tableIndexes[] = [
+                    'key_name' => $index->name,
+                    'column_name' => $column,
+                    'non_unique' => $index->unique ? 0 : 1,
+                    'camelColumnName' => preg_replace_callback('/_(.?)/', function ($match) {
+                        return strtoupper($match[1]);
+                    }, $column),
+                ];
+            }
         }
 
         $hasCreatedAt = false;

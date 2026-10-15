@@ -2,6 +2,11 @@
 
 namespace Tests\Builder;
 
+use ByJG\AnyDataset\Db\DatabaseExecutor;
+use ByJG\AnyDataset\Db\Factory;
+use ByJG\AnyDataset\Db\Metadata\ColumnMetadata;
+use ByJG\AnyDataset\Db\Metadata\ForeignKeyMetadata;
+use ByJG\AnyDataset\Db\Metadata\IndexMetadata;
 use Tests\Fixture\ExposedScripts;
 use ParseError;
 use PHPUnit\Framework\TestCase;
@@ -28,27 +33,49 @@ class CodegenTest extends TestCase
     }
 
     /**
-     * EXPLAIN-style rows as the anydataset iterator returns them (lowercase keys).
+     * A column as the anydataset-db dialect describes it.
      */
+    protected function column(
+        string $name,
+        string $dbType,
+        bool $required,
+        string $phpType = 'string',
+        ?int $length = null,
+        bool $primaryKey = false,
+        bool $autoIncrement = false,
+        bool $generated = false,
+        mixed $default = null
+    ): ColumnMetadata {
+        return new ColumnMetadata($name, $dbType, $required, $default, $phpType, $length, null, $primaryKey, $autoIncrement, $generated);
+    }
+
+    /**
+     * @param list<ColumnMetadata> $columns
+     * @return array<string, ColumnMetadata> keyed by name, as getTableMetadata() returns them
+     */
+    protected function byName(array $columns): array
+    {
+        return array_column(array_map(fn ($column) => ['name' => $column->name, 'column' => $column], $columns), 'column', 'name');
+    }
+
     protected function tableDefinition(): array
     {
-        return [
-            ['field' => 'id', 'type' => 'int(11)', 'null' => 'NO', 'key' => 'PRI', 'default' => null, 'extra' => 'auto_increment'],
-            ['field' => 'name', 'type' => 'varchar(120)', 'null' => 'NO', 'key' => '', 'default' => null, 'extra' => ''],
-            ['field' => 'price', 'type' => 'decimal(10,2)', 'null' => 'YES', 'key' => '', 'default' => null, 'extra' => ''],
-            ['field' => 'is_active', 'type' => 'tinyint(1)', 'null' => 'NO', 'key' => '', 'default' => '1', 'extra' => ''],
-            ['field' => 'quantity', 'type' => 'bigint(20)', 'null' => 'YES', 'key' => '', 'default' => null, 'extra' => ''],
-            ['field' => 'created_at', 'type' => 'timestamp', 'null' => 'YES', 'key' => '', 'default' => null, 'extra' => ''],
-            ['field' => 'updated_at', 'type' => 'datetime', 'null' => 'YES', 'key' => '', 'default' => null, 'extra' => ''],
-            ['field' => 'deleted_at', 'type' => 'datetime', 'null' => 'YES', 'key' => '', 'default' => null, 'extra' => ''],
-        ];
+        return $this->byName([
+            $this->column('id', 'int(11)', true, 'integer', primaryKey: true, autoIncrement: true),
+            $this->column('name', 'varchar(120)', true, 'string', 120),
+            $this->column('price', 'decimal(10,2)', false, 'float', 10),
+            $this->column('is_active', 'tinyint(1)', true, 'integer', default: '1'),
+            $this->column('quantity', 'bigint(20)', false, 'integer'),
+            $this->column('created_at', 'timestamp', false),
+            $this->column('updated_at', 'datetime', false),
+            $this->column('deleted_at', 'datetime', false),
+        ]);
     }
 
     protected function tableIndexes(): array
     {
         return [
-            ['key_name' => 'PRIMARY', 'column_name' => 'id', 'non_unique' => 0],
-            ['key_name' => 'idx_is_active', 'column_name' => 'is_active', 'non_unique' => 1],
+            new IndexMetadata('idx_is_active', ['is_active'], false),
         ];
     }
 
@@ -85,10 +112,11 @@ class CodegenTest extends TestCase
 
     public function testMaxLengthComesFromCharColumns(): void
     {
-        $definition = $this->tableDefinition();
-        $definition[] = ['field' => 'code', 'type' => 'char(3)', 'null' => 'NO', 'key' => '', 'default' => null, 'extra' => ''];
-        $definition[] = ['field' => 'owner_id', 'type' => 'binary(16)', 'null' => 'NO', 'key' => '', 'default' => null, 'extra' => ''];
-        $definition[] = ['field' => 'notes', 'type' => 'text', 'null' => 'YES', 'key' => '', 'default' => null, 'extra' => ''];
+        $definition = $this->tableDefinition() + $this->byName([
+            $this->column('code', 'char(3)', true, 'string', 3),
+            $this->column('owner_id', 'binary(16)', true),
+            $this->column('notes', 'text', false),
+        ]);
 
         $data = $this->scripts->callBuildCodegenData('product_item', $definition, $this->tableIndexes(), false);
         $byField = array_column($data['fields'], null, 'field');
@@ -112,7 +140,9 @@ class CodegenTest extends TestCase
         $this->assertTrue($data['hasCreatedAt']);
         $this->assertTrue($data['hasUpdatedAt']);
         $this->assertTrue($data['hasDeletedAt']);
-        $this->assertSame('isActive', $data['indexes'][1]['camelColumnName']);
+        $this->assertSame([
+            ['key_name' => 'idx_is_active', 'column_name' => 'is_active', 'non_unique' => 1, 'camelColumnName' => 'isActive'],
+        ], $data['indexes']);
     }
 
     /**
@@ -144,15 +174,15 @@ class CodegenTest extends TestCase
     public function testForeignKeyParentTable(): void
     {
         // A table with two FK columns: an int FK and a binary(16) UUID FK.
-        $tableDefinition = [
-            ['field' => 'id', 'type' => 'int(11)', 'null' => 'NO', 'key' => 'PRI', 'default' => null, 'extra' => 'auto_increment'],
-            ['field' => 'category_id', 'type' => 'int(11)', 'null' => 'NO', 'key' => 'MUL', 'default' => null, 'extra' => ''],
-            ['field' => 'owner_id', 'type' => 'binary(16)', 'null' => 'NO', 'key' => 'MUL', 'default' => null, 'extra' => ''],
-            ['field' => 'name', 'type' => 'varchar(120)', 'null' => 'NO', 'key' => '', 'default' => null, 'extra' => ''],
-        ];
+        $tableDefinition = $this->byName([
+            $this->column('id', 'int(11)', true, 'integer', primaryKey: true, autoIncrement: true),
+            $this->column('category_id', 'int(11)', true, 'integer'),
+            $this->column('owner_id', 'binary(16)', true),
+            $this->column('name', 'varchar(120)', true, 'string', 120),
+        ]);
         $foreignKeys = [
-            ['column_name' => 'category_id', 'referenced_table_name' => 'category'],
-            ['column_name' => 'owner_id', 'referenced_table_name' => 'users'],
+            new ForeignKeyMetadata(['category_id'], 'category', ['id']),
+            new ForeignKeyMetadata(['owner_id'], 'users', ['id']),
         ];
 
         $data = $this->scripts->callBuildCodegenData('product', $tableDefinition, [], false, $foreignKeys);
@@ -171,6 +201,71 @@ class CodegenTest extends TestCase
         $this->assertStringContainsString('#[FieldUuidAttribute(fieldName: "owner_id", parentTable: "users")]', $code);
         // A non-FK column stays plain.
         $this->assertStringContainsString('#[FieldAttribute(fieldName: "name")]', $code);
+    }
+
+    public function testGeneratedColumnIsNotWritten(): void
+    {
+        $definition = $this->tableDefinition() + $this->byName([
+            $this->column('total', 'int', false, 'integer', generated: true),
+        ]);
+
+        $data = $this->scripts->callBuildCodegenData('product_item', $definition, [], false);
+        $byField = array_column($data['fields'], null, 'field');
+        $this->assertSame('VIRTUAL GENERATED', $byField['total']['extra']);
+        $this->assertSame('auto_increment', $byField['id']['extra']);
+
+        $model = $this->scripts->callRenderCodegenTemplate('model.php', $data);
+        $this->assertStringContainsString('#[FieldAttribute(fieldName: "total", syncWithDb: false)]', $model);
+        $controller = $this->scripts->callRenderCodegenTemplate('controller.php', $data);
+        $this->assertStringNotContainsString('property: "total"', $controller);
+    }
+
+    /**
+     * The codegen reads the table through the anydataset-db dialect, so it is not tied to MySQL.
+     */
+    public function testReadsTheTableFromSqlite(): void
+    {
+        $dbFile = $this->workdir . '/codegen.db';
+        $executor = DatabaseExecutor::using(Factory::getDbInstance('sqlite://' . $dbFile));
+        $executor->execute('CREATE TABLE category (id INTEGER PRIMARY KEY, name VARCHAR(50) NOT NULL)');
+        $executor->execute(
+            'CREATE TABLE product_item (
+                id INTEGER PRIMARY KEY,
+                category_id INTEGER NOT NULL REFERENCES category (id),
+                name VARCHAR(120) NOT NULL,
+                price NUMERIC(10,2),
+                name_length INTEGER GENERATED ALWAYS AS (length(name)) VIRTUAL,
+                created_at DATETIME
+            )'
+        );
+        $executor->execute('CREATE INDEX ix_product_item_name ON product_item (name)');
+
+        try {
+            $data = $this->scripts->callBuildCodegenDataFromDatabase($executor, 'product_item', false);
+        } finally {
+            unlink($dbFile);
+        }
+
+        $byField = array_column($data['fields'], null, 'field');
+        $this->assertSame(['id', 'category_id', 'name', 'price', 'name_length', 'created_at'], array_keys($byField));
+        $this->assertSame(['id'], $data['primaryKeys']);
+        $this->assertSame('yes', $data['autoIncrement']);
+        $this->assertSame('category', $byField['category_id']['parent_table']);
+        $this->assertSame(120, $byField['name']['openapi_max_length']);
+        $this->assertSame(['float', 'number'], [$byField['price']['php_type'], $byField['price']['openapi_type']]);
+        $this->assertSame('date-time', $byField['created_at']['openapi_format']);
+        $this->assertSame(['categoryId', 'name'], $data['nonNullableFields']);
+        $this->assertSame('name', $data['indexes'][0]['column_name']);
+
+        $model = $this->scripts->callRenderCodegenTemplate('model.php', $data);
+        $this->assertValidPhp($model);
+        $this->assertStringContainsString('#[FieldAttribute(primaryKey: true, fieldName: "id")]', $model);
+        $this->assertStringContainsString('#[FieldAttribute(fieldName: "category_id", parentTable: "category")]', $model);
+        $this->assertStringContainsString('#[FieldAttribute(fieldName: "name_length", syncWithDb: false)]', $model);
+
+        $repository = $this->scripts->callRenderCodegenTemplate('repository.php', $data);
+        $this->assertValidPhp($repository);
+        $this->assertStringContainsString('public function getByName($name)', $repository);
     }
 
     protected function assertValidPhp(string $code): void

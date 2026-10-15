@@ -115,6 +115,23 @@
   UUID in PHP, in the same format (upper case, with dashes), and needs no database
   connection.
 
+- `codegen` read the table with MySQL-only statements (`EXPLAIN`, `SHOW INDEX`,
+  `information_schema.key_column_usage`), so it failed on any other database; on SQLite with
+  `near "payment": syntax error`. It now reads the table through the anydataset-db dialect
+  (`getTableMetadata()`, `getTableIndexes()`, `getTableForeignKeys()`), on MySQL, SQLite,
+  PostgreSQL, SQL Server and Oracle. Types such as PostgreSQL's `character varying(n)`,
+  `numeric` and `timestamp without time zone` are mapped like their MySQL counterparts.
+
+  The template variables are unchanged, so custom templates keep working. On MySQL there are
+  two differences: `field.key` is `PRI` or empty (it used to be `UNI` or `MUL` for other
+  indexed columns), and `field.extra` is `auto_increment`, `VIRTUAL GENERATED` (for any
+  generated column, stored ones included, which are not writable either) or empty.
+  `indexes` no longer has an entry for the primary key, which the templates skipped anyway.
+
+  `BaseScripts::buildCodegenData()` now takes the `ColumnMetadata`, `IndexMetadata` and
+  `ForeignKeyMetadata` objects of anydataset-db instead of the raw MySQL rows; a project that
+  overrides it has to follow. The new `buildCodegenDataFromDatabase()` reads them.
+
 ## Requirements
 
 - PHP 8.3, 8.4, 8.5 and 8.6 are now supported: `"php": ">=8.3 <8.7"`.
