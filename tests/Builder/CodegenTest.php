@@ -203,6 +203,24 @@ class CodegenTest extends TestCase
         $this->assertStringContainsString('#[FieldAttribute(fieldName: "name")]', $code);
     }
 
+    public function testUuidKeyTableUsesTableUuidPKAttribute(): void
+    {
+        $definition = $this->byName([
+            $this->column('id', 'binary(16)', true, primaryKey: true),
+            $this->column('name', 'varchar(120)', true, 'string', 120),
+        ]);
+
+        $data = $this->scripts->callBuildCodegenData('product_item', $definition, [], false);
+        $code = $this->scripts->callRenderCodegenTemplate('model.php', $data);
+
+        $this->assertValidPhp($code);
+        $this->assertSame('no', $data['autoIncrement']);
+        $this->assertStringContainsString('use ByJG\MicroOrm\Attributes\TableUuidPKAttribute;', $code);
+        $this->assertStringContainsString('#[TableUuidPKAttribute("product_item")]', $code);
+        $this->assertStringContainsString('#[FieldUuidAttribute(primaryKey: true, fieldName: "id")]', $code);
+        $this->assertStringNotContainsString('MySql', $code);
+    }
+
     public function testGeneratedColumnIsNotWritten(): void
     {
         $definition = $this->tableDefinition() + $this->byName([

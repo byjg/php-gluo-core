@@ -128,6 +128,11 @@
   generated column, stored ones included, which are not writable either) or empty.
   `indexes` no longer has an entry for the primary key, which the templates skipped anyway.
 
+  A table whose primary key is not auto-increment (a `binary(16)` UUID) gets a model with
+  micro-orm's `TableUuidPKAttribute`, which generates the UUID in PHP on every database, instead
+  of `TableMySqlUuidPKAttribute`, which asked MySQL for `uuid_to_bin(uuid())` and is now
+  deprecated.
+
   `BaseScripts::buildCodegenData()` now takes the `ColumnMetadata`, `IndexMetadata` and
   `ForeignKeyMetadata` objects of anydataset-db instead of the raw MySQL rows; a project that
   overrides it has to follow. The new `buildCodegenDataFromDatabase()` reads them.
