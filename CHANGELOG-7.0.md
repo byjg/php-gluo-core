@@ -109,6 +109,12 @@
   `post()`, so the route must keep its `#[ValidateRequest]` attribute (the starter's
   `LoginController` has it).
 
+- `BaseRepository::getUuid()` asked the database for the UUID with `SELECT upper(uuid())`,
+  a MySQL-only function, so the password-reset flow of `BaseLoginController` failed on
+  SQLite (and PostgreSQL) with `no such function: uuid`. It now generates a random version 4
+  UUID in PHP, in the same format (upper case, with dashes), and needs no database
+  connection.
+
 ## Requirements
 
 - PHP 8.3, 8.4, 8.5 and 8.6 are now supported: `"php": ">=8.3 <8.7"`.

@@ -4,6 +4,7 @@ namespace Tests\Repository;
 
 use ByJG\AnyDataset\Db\DatabaseExecutor;
 use ByJG\AnyDataset\Db\Factory;
+use ByJG\Gluo\Repository\BaseRepository;
 use ByJG\MicroOrm\Mapper;
 use ByJG\MicroOrm\Query;
 use ByJG\MicroOrm\Repository;
@@ -141,6 +142,21 @@ class BaseRepositoryTest extends TestCase
 
         $this->assertInstanceOf(Product::class, $model);
         $this->assertNull($model->getId());
+    }
+
+    public function testGetUuidIsAVersion4UuidWithoutTouchingTheDatabase(): void
+    {
+        // No container is configured in this test: getUuid() must not ask any database.
+        $uuid = BaseRepository::getUuid();
+
+        $this->assertMatchesRegularExpression('/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/', (string)$uuid);
+    }
+
+    public function testGetUuidIsDifferentEveryTime(): void
+    {
+        $uuids = array_map(fn () => BaseRepository::getUuid(), range(1, 1000));
+
+        $this->assertCount(1000, array_unique($uuids));
     }
 
     public function testAccessors(): void
