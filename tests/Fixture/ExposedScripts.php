@@ -1,7 +1,8 @@
 <?php
 
-namespace ByJGTest\Gluo\Fixture;
+namespace Tests\Fixture;
 
+use ByJG\AnyDataset\Db\DatabaseExecutor;
 use ByJG\Gluo\Builder\BaseScripts;
 
 class ExposedScripts extends BaseScripts
@@ -34,6 +35,11 @@ class ExposedScripts extends BaseScripts
     public function callBuildCodegenData(string $table, array $tableDefinition, array $tableIndexes, bool $isActiveRecord, array $foreignKeys = []): array
     {
         return $this->buildCodegenData($table, $tableDefinition, $tableIndexes, $isActiveRecord, $foreignKeys);
+    }
+
+    public function callBuildCodegenDataFromDatabase(DatabaseExecutor $executor, string $table, bool $isActiveRecord): array
+    {
+        return $this->buildCodegenDataFromDatabase($executor, $table, $isActiveRecord);
     }
 
     public function callRenderCodegenTemplate(string $templateName, array $data): string

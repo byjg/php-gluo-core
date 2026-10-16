@@ -1,6 +1,6 @@
 <?php
 
-namespace ByJGTest\Gluo\Util;
+namespace Tests\Util;
 
 use ByJG\Gluo\Util\JwtContext;
 use ByJG\RestServer\Exception\Error404Exception;

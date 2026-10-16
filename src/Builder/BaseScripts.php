@@ -3,6 +3,9 @@
 namespace ByJG\Gluo\Builder;
 
 use ByJG\AnyDataset\Db\DatabaseExecutor;
+use ByJG\AnyDataset\Db\Metadata\ColumnMetadata;
+use ByJG\AnyDataset\Db\Metadata\ForeignKeyMetadata;
+use ByJG\AnyDataset\Db\Metadata\IndexMetadata;
 use ByJG\Config\Config;
 use ByJG\Config\Exception\ConfigException;
 use ByJG\Config\Exception\ConfigNotFoundException;
@@ -26,11 +29,19 @@ use ReflectionException;
 
 abstract class BaseScripts
 {
-    protected string|false $workdir;
+    /**
+     * The migration database classes ./gluo and the API tests register. Migration picks the
+     * one matching the scheme of DBDRIVER_CONNECTION (mysql://, pgsql:// or postgres://, sqlite://).
+     */
+    public const MIGRATION_DATABASES = [MySqlDatabase::class, PgsqlDatabase::class, SqliteDatabase::class];
+
+    protected string $workdir;
 
     public function __construct()
     {
-        $this->workdir = realpath(__DIR__ . '/../../../../..');
+        // realpath() returns false when the package is not installed under a project
+        // (e.g. running the package's own test suite); the unresolved path is still correct.
+        $this->workdir = realpath(__DIR__ . '/../../../../..') ?: dirname(__DIR__, 5);
     }
 
     /**
@@ -79,9 +90,9 @@ abstract class BaseScripts
      */
     protected function registerMigrationDatabases(): void
     {
-        Migration::registerDatabase(MySqlDatabase::class);
-        Migration::registerDatabase(PgsqlDatabase::class);
-        Migration::registerDatabase(SqliteDatabase::class);
+        foreach (self::MIGRATION_DATABASES as $databaseClass) {
+            Migration::registerDatabase($databaseClass);
+        }
     }
 
     // --- Migrate ---
@@ -118,10 +129,10 @@ abstract class BaseScripts
         putenv("APP_ENV=$env");
         Config::reset();
 
-        $dbConnection = Config::get('DBDRIVER_CONNECTION');
+        $dbConnection = (string) Config::get('DBDRIVER_CONNECTION');
 
         echo "> Environment: $env\n";
-        echo "> Database: " . preg_replace('/:[^:]+@/', ':****@', $dbConnection) . "\n\n";
+        echo "> Database: " . (string) preg_replace('/:[^:]+@/', ':****@', $dbConnection) . "\n\n";
 
         $command = null;
         $version = null;
@@ -131,7 +142,7 @@ abstract class BaseScripts
 
         foreach ($filteredArgs as $arg) {
             if (str_starts_with($arg, '--version=') || str_starts_with($arg, '-u=')) {
-                $version = (int) substr($arg, strpos($arg, '=') + 1);
+                $version = (int) (explode('=', $arg, 2)[1] ?? 0);
             } elseif ($arg === '--force') {
                 $force = true;
             } elseif ($arg === '--no-transaction') {
@@ -228,28 +239,29 @@ abstract class BaseScripts
         }
     }
 
-    protected function getMigrateHelp(): string
+    public function getMigrateHelp(): string
     {
         return "Usage:\n" .
-            "  APP_ENV=<environment> composer migrate -- <command> [options]\n" .
-            "  composer migrate -- --env=<environment> <command> [options]\n\n" .
+            "  APP_ENV=<environment> ./gluo migrate:<command> [options]\n" .
+            "  ./gluo --env=<environment> migrate:<command> [options]\n\n" .
             $this->getEnvironmentHelpText() .
             "Available Commands:\n" .
-            "  version               Show current database version (alias: status)\n" .
-            "  create                Create migration version table (alias: install)\n" .
-            "  reset                 Reset database to base.sql and optionally migrate to a version\n" .
-            "  up                    Migrate up to a specific version or latest\n" .
-            "  down                  Migrate down to a specific version or 0\n" .
-            "  update                Intelligently migrate up or down to a specific version\n\n" .
+            "  migrate:version       Show current database version (alias: migrate:status)\n" .
+            "  migrate:create        Create migration version table (alias: migrate:install)\n" .
+            "  migrate:reset         Reset database to base.sql and optionally migrate to a version\n" .
+            "  migrate:up            Migrate up to a specific version or latest\n" .
+            "  migrate:down          Migrate down to a specific version or 0\n" .
+            "  migrate:update        Intelligently migrate up or down to a specific version\n\n" .
             "Options:\n" .
             "  -u=N, --version=N     Target version for migration\n" .
             "  --force               Force migration even if database is in partial state\n" .
             "  --no-transaction      Disable transaction support\n" .
             "  -v, -vv, -vvv         Increase verbosity\n\n" .
             "Examples:\n" .
-            "  APP_ENV=dev composer migrate -- version\n" .
-            "  APP_ENV=dev composer migrate -- reset --version=5\n" .
-            "  composer migrate -- --env=dev up -vv\n";
+            "  APP_ENV=dev ./gluo migrate:version\n" .
+            "  ./gluo --env=dev migrate:reset --version=5\n" .
+            "  ./gluo --env=dev migrate:up -vv\n\n" .
+            "The composer script is an alias: composer migrate -- --env=dev update\n";
     }
 
     protected function getEnvironmentHelpText(): string
@@ -261,6 +273,9 @@ abstract class BaseScripts
 
     // --- OpenAPI ---
 
+    /**
+     * @throws Exception
+     */
     public function runGenOpenApiDocs(array $arguments): void
     {
         $outputPath = $this->getOpenApiOutputPath();
@@ -271,6 +286,9 @@ abstract class BaseScripts
 
         $generator = (new Generator())->setConfig(["operationId.hash" => false]);
         $openapi = $generator->generate($this->getOpenApiScanPaths());
+        if (is_null($openapi)) {
+            throw new Exception("No OpenAPI annotations found in " . implode(", ", $this->getOpenApiScanPaths()));
+        }
         file_put_contents($outputPath, $openapi->toJson());
     }
 
@@ -289,6 +307,8 @@ abstract class BaseScripts
      */
     public function runCodeGenerator(array $arguments): void
     {
+        $arguments = array_values($arguments);
+
         $table = null;
         foreach ($arguments as $index => $arg) {
             if (str_starts_with($arg, "--table=")) {
@@ -338,18 +358,7 @@ abstract class BaseScripts
         /** @var DatabaseExecutor $executor */
         $executor = Config::get(DatabaseExecutor::class);
 
-        $tableDefinition = $executor->getIterator("EXPLAIN " . strtolower($table))->toArray();
-        $tableIndexes = $executor->getIterator("SHOW INDEX FROM " . strtolower($table))->toArray();
-
-        // Foreign keys, so the generated model can declare parentTable for FK columns.
-        // MySQL-specific (information_schema), consistent with the EXPLAIN/SHOW INDEX above.
-        $foreignKeys = $executor->getIterator(
-            "SELECT column_name, referenced_table_name FROM information_schema.key_column_usage "
-            . "WHERE table_schema = database() AND table_name = :t AND referenced_table_name IS NOT NULL",
-            ['t' => strtolower($table)]
-        )->toArray();
-
-        $data = $this->buildCodegenData($table, $tableDefinition, $tableIndexes, $isActiveRecord, $foreignKeys);
+        $data = $this->buildCodegenDataFromDatabase($executor, $table, $isActiveRecord);
 
         if (in_array("--debug", $arguments)) {
             print_r($data);
@@ -359,79 +368,84 @@ abstract class BaseScripts
     }
 
     /**
-     * Convert raw EXPLAIN/SHOW INDEX rows into the template data array.
-     * Kept separate from runCodeGenerator so it can be tested without a database.
+     * Read the table through the database dialect, so codegen works on every database
+     * anydataset-db describes (MySQL, SQLite, PostgreSQL, SQL Server, Oracle).
      */
-    protected function buildCodegenData(string $table, array $tableDefinition, array $tableIndexes, bool $isActiveRecord, array $foreignKeys = []): array
+    protected function buildCodegenDataFromDatabase(DatabaseExecutor $executor, string $table, bool $isActiveRecord): array
+    {
+        $helper = $executor->getHelper();
+        $tableName = strtolower($table);
+
+        return $this->buildCodegenData(
+            $table,
+            $helper->getTableMetadata($executor, $tableName),
+            $helper->getTableIndexes($executor, $tableName),
+            $isActiveRecord,
+            $helper->getTableForeignKeys($executor, $tableName)
+        );
+    }
+
+    /**
+     * Convert the table metadata into the template data array.
+     * Kept separate from runCodeGenerator so it can be tested without a database.
+     *
+     * @param array<array-key, ColumnMetadata> $columns
+     * @param list<IndexMetadata> $indexes
+     * @param list<ForeignKeyMetadata> $foreignKeys
+     */
+    protected function buildCodegenData(string $table, array $columns, array $indexes, bool $isActiveRecord, array $foreignKeys = []): array
     {
         $autoIncrement = false;
 
         // Map FK column name -> referenced (parent) table, for parentTable in the model.
         $parentTableByColumn = [];
-        foreach ($foreignKeys as $fk) {
-            if (!empty($fk['column_name']) && !empty($fk['referenced_table_name'])) {
-                $parentTableByColumn[$fk['column_name']] = $fk['referenced_table_name'];
+        foreach ($foreignKeys as $foreignKey) {
+            foreach ($foreignKey->columns as $column) {
+                $parentTableByColumn[$column] = $foreignKey->parentTable;
             }
         }
 
-        foreach ($tableDefinition as $key => $field) {
-            $type = preg_replace('/\(.*/', '', $field['type']);
-
-            $tableDefinition[$key]['property'] = preg_replace_callback('/_(.?)/', function ($matches) {
-                return strtoupper($matches[1]);
-            }, $field['field']);
-
-            // Parent table for a foreign-key column (empty string when not an FK).
-            $tableDefinition[$key]['parent_table'] = $parentTableByColumn[$field['field']] ?? '';
-
-            if ($field['extra'] == 'auto_increment') {
+        // The template variables keep the names of MySQL's EXPLAIN (field, type, null, key, extra),
+        // which the templates and the projects' own templates are written against.
+        $tableDefinition = [];
+        foreach ($columns as $column) {
+            $extra = [];
+            if ($column->autoIncrement) {
                 $autoIncrement = true;
+                $extra[] = 'auto_increment';
+            }
+            if ($column->generated) {
+                $extra[] = 'VIRTUAL GENERATED';
             }
 
-            switch ($type) {
-                case 'int':
-                case 'tinyint':
-                case 'smallint':
-                    $tableDefinition[$key]['php_type'] = 'int';
-                    $tableDefinition[$key]['openapi_type'] = 'integer';
-                    $tableDefinition[$key]['openapi_format'] = 'int32';
-                    break;
-                case 'mediumint':
-                case 'bigint':
-                case 'integer':
-                    $tableDefinition[$key]['php_type'] = 'int';
-                    $tableDefinition[$key]['openapi_type'] = 'integer';
-                    $tableDefinition[$key]['openapi_format'] = 'int64';
-                    break;
-                case 'float':
-                case 'double':
-                case 'decimal':
-                    $tableDefinition[$key]['php_type'] = 'float';
-                    $tableDefinition[$key]['openapi_type'] = 'number';
-                    $tableDefinition[$key]['openapi_format'] = 'double';
-                    break;
-                case 'bool':
-                case 'boolean':
-                    $tableDefinition[$key]['php_type'] = 'bool';
-                    $tableDefinition[$key]['openapi_type'] = 'boolean';
-                    $tableDefinition[$key]['openapi_format'] = 'boolean';
-                    break;
-                case 'date':
-                    $tableDefinition[$key]['php_type'] = 'string';
-                    $tableDefinition[$key]['openapi_type'] = 'string';
-                    $tableDefinition[$key]['openapi_format'] = 'date';
-                    break;
-                case 'datetime':
-                case 'timestamp':
-                    $tableDefinition[$key]['php_type'] = 'string';
-                    $tableDefinition[$key]['openapi_type'] = 'string';
-                    $tableDefinition[$key]['openapi_format'] = 'date-time';
-                    break;
-                default:
-                    $tableDefinition[$key]['php_type'] = 'string';
-                    $tableDefinition[$key]['openapi_type'] = 'string';
-                    $tableDefinition[$key]['openapi_format'] = 'string';
-            }
+            [$phpType, $openapiType, $openapiFormat] = match (preg_replace('/\(.*/', '', $column->dbType)) {
+                'int', 'tinyint', 'smallint' => ['int', 'integer', 'int32'],
+                'mediumint', 'bigint', 'integer' => ['int', 'integer', 'int64'],
+                'float', 'double', 'double precision', 'decimal', 'numeric', 'real' => ['float', 'number', 'double'],
+                'bool', 'boolean' => ['bool', 'boolean', 'boolean'],
+                'date' => ['string', 'string', 'date'],
+                'datetime', 'datetime2', 'timestamp', 'timestamp without time zone', 'timestamp with time zone' => ['string', 'string', 'date-time'],
+                default => ['string', 'string', 'string'],
+            };
+
+            $tableDefinition[] = [
+                'field' => $column->name,
+                'property' => preg_replace_callback('/_(.?)/', function ($matches) {
+                    return strtoupper($matches[1]);
+                }, $column->name),
+                'type' => $column->dbType,
+                'null' => $column->required ? 'NO' : 'YES',
+                'key' => $column->primaryKey ? 'PRI' : '',
+                'default' => $column->default,
+                'extra' => implode(' ', $extra),
+                // Parent table for a foreign-key column (empty string when not an FK).
+                'parent_table' => $parentTableByColumn[$column->name] ?? '',
+                'php_type' => $phpType,
+                'openapi_type' => $openapiType,
+                'openapi_format' => $openapiFormat,
+                // Declared length of a char/varchar column, emitted as OpenAPI maxLength (0 when not applicable).
+                'openapi_max_length' => $column->phpType == 'string' && str_contains($column->dbType, 'char') ? (int)$column->length : 0,
+            ];
         }
 
         $nullableFields = [];
@@ -455,10 +469,19 @@ abstract class BaseScripts
             }
         }
 
-        foreach ($tableIndexes as $key => $field) {
-            $tableIndexes[$key]['camelColumnName'] = preg_replace_callback('/_(.?)/', function ($match) {
-                return strtoupper($match[1]);
-            }, $field['column_name']);
+        // One entry per indexed column, with the names of MySQL's SHOW INDEX, as the templates expect.
+        $tableIndexes = [];
+        foreach ($indexes as $index) {
+            foreach ($index->columns as $column) {
+                $tableIndexes[] = [
+                    'key_name' => $index->name,
+                    'column_name' => $column,
+                    'non_unique' => $index->unique ? 0 : 1,
+                    'camelColumnName' => preg_replace_callback('/_(.?)/', function ($match) {
+                        return strtoupper($match[1]);
+                    }, $column),
+                ];
+            }
         }
 
         $hasCreatedAt = false;
@@ -496,11 +519,23 @@ abstract class BaseScripts
 
     /**
      * Render a single codegen template (e.g. 'model.php') with the given data.
+     *
+     * @throws TemplateParseException
+     * @throws Exception
      */
     protected function renderCodegenTemplate(string $templateName, array $data): string
     {
         $loader = new FileSystemLoader($this->getCodegenTemplatePath());
-        return $loader->getTemplate($templateName)->render($data);
+        $rendered = $loader->getTemplate($templateName)->render($data);
+
+        // render() is typed string|array|null for single-expression templates; a file
+        // template always renders to a string. Anything else would be written to disk
+        // as an empty file, so fail loudly instead.
+        if (!is_string($rendered)) {
+            throw new Exception("Template $templateName did not render to a string");
+        }
+
+        return $rendered;
     }
 
     /**
@@ -556,6 +591,9 @@ abstract class BaseScripts
                 $file = $this->workdir . '/src/Controller/' . $data['className'] . 'Controller.php';
                 file_put_contents($file, $rendered);
                 echo "File saved in $file\n";
+                // No DI entry is written: controllers are covered by the Autowire rule in
+                // config/dev/07-controllers.php. Repositories and services still get one,
+                // because those bindings encode decisions a pattern cannot make.
             } else {
                 print_r($rendered);
             }
@@ -574,25 +612,31 @@ abstract class BaseScripts
         }
     }
 
-    protected function getCodeGeneratorHelp(): string
+    public function getCodeGeneratorHelp(): string
     {
         return "Usage:\n" .
-            "  APP_ENV=<environment> composer codegen -- --table=<table_name> <arguments> [options]\n" .
-            "  composer codegen -- --env=<environment> --table=<table_name> <arguments> [options]\n\n" .
+            "  APP_ENV=<environment> ./gluo codegen:<component> --table=<table_name> [options]\n" .
+            "  ./gluo --env=<environment> codegen:<component> --table=<table_name> [options]\n\n" .
             "Required:\n" .
             "  --table=<name>        Database table name\n\n" .
             $this->getEnvironmentHelpText() .
-            "Arguments (at least one required):\n" .
-            "  all                   Generate all components for the selected pattern\n" .
-            "  model                 Generate Model\n" .
-            "  repo|repository       Generate Repository (Repository pattern only)\n" .
-            "  service               Generate Service (Repository pattern only)\n" .
-            "  controller            Generate REST controller\n" .
-            "  test                  Generate Test\n\n" .
+            "Available Commands:\n" .
+            "  codegen:all           Generate all components for the selected pattern\n" .
+            "  codegen:model         Generate Model\n" .
+            "  codegen:repository    Generate Repository (Repository pattern only; alias: codegen:repo)\n" .
+            "  codegen:service       Generate Service (Repository pattern only)\n" .
+            "  codegen:controller    Generate REST controller\n" .
+            "  codegen:test          Generate Test\n\n" .
             "Options:\n" .
             "  --activerecord        Use ActiveRecord pattern instead of Repository pattern\n" .
             "  --save                Save generated files to disk\n" .
-            "  --debug               Show debug information\n";
+            "  --debug               Show debug information\n\n" .
+            "Examples:\n" .
+            "  ./gluo --env=dev codegen:all --table=product --save\n" .
+            "  ./gluo --env=dev codegen:model --table=product --activerecord\n\n" .
+            "Several components in one run, and the composer script alias:\n" .
+            "  ./gluo --env=dev codegen --table=product model controller --save\n" .
+            "  composer codegen -- --env=dev --table=product all --save\n";
     }
 
     protected function extractArguments(array $arguments, bool $hasCmd = true): array
@@ -624,9 +668,31 @@ abstract class BaseScripts
         return $env;
     }
 
+    /**
+     * Register a generated repository or service in its DI config file.
+     *
+     * Controllers are deliberately absent: they are covered by an Autowire pattern rule,
+     * so there is no per-class entry to write.
+     *
+     * @throws Exception
+     */
     protected function addToConfig(string $configFile, string $className, string $namespace): void
     {
+        // A project generated before this config file existed will not have it. That is
+        // not worth aborting a successful generation for — say what is missing and let
+        // the developer add the binding.
+        if (!file_exists($configFile)) {
+            echo "WARNING: " . basename($configFile) . " not found. "
+                . "Register $className manually, or the container cannot resolve it.\n";
+            return;
+        }
+
+        // The file exists but cannot be read: a permission/IO problem, not a missing
+        // config, so it is not something the developer can work around manually.
         $contents = file_get_contents($configFile);
+        if ($contents === false) {
+            throw new Exception("Could not read $configFile");
+        }
         $modified = false;
 
         $type = str_ends_with($className, 'Repository') ? 'Repository' : 'Service';

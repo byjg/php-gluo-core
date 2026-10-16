@@ -1,8 +1,8 @@
 <?php
 
-namespace ByJGTest\Gluo\Builder;
+namespace Tests\Builder;
 
-use ByJGTest\Gluo\Fixture\ExposedScripts;
+use Tests\Fixture\ExposedScripts;
 use Exception;
 use PHPUnit\Framework\TestCase;
 

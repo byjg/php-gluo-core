@@ -1,6 +1,6 @@
 <?php
 
-namespace ByJGTest\Gluo\Fixture;
+namespace Tests\Fixture;
 
 use ByJG\Gluo\Trait\OaCreatedAt;
 use ByJG\MicroOrm\Attributes\FieldAttribute;
