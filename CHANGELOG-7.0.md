@@ -137,6 +137,13 @@
   `ForeignKeyMetadata` objects of anydataset-db instead of the raw MySQL rows; a project that
   overrides it has to follow. The new `buildCodegenDataFromDatabase()` reads them.
 
+- `BaseApiTestCase` reset the test database with `MySqlDatabase` unless `getDatabaseClass()` was
+  overridden, so the tests of a PostgreSQL or SQLite project failed with
+  `Scheme "sqlite" does not found`. It now registers every class of the new
+  `BaseScripts::MIGRATION_DATABASES` (MySQL, PostgreSQL, SQLite), the list `./gluo migrate`
+  already used, and the scheme of `DBDRIVER_CONNECTION` picks one. `getDatabaseClass()` returns
+  `null` by default; a project that overrides it keeps its class.
+
 ## Requirements
 
 - PHP 8.3, 8.4, 8.5 and 8.6 are now supported: `"php": ">=8.3 <8.7"`.

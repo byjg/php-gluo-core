@@ -5,8 +5,8 @@ namespace ByJG\Gluo\Testing;
 use ByJG\ApiTools\Base\Schema;
 use ByJG\ApiTools\OpenApiValidation;
 use ByJG\Config\Config;
-use ByJG\DbMigration\Database\MySqlDatabase;
 use ByJG\DbMigration\Migration;
+use ByJG\Gluo\Builder\BaseScripts;
 use ByJG\Util\Uri;
 use ByJG\WebRequest\Psr7\Request;
 use Exception;
@@ -44,11 +44,15 @@ abstract class BaseApiTestCase extends TestCase
     abstract protected function getOpenApiPath(): string;
 
     /**
-     * Override to change the database driver used for migration reset.
+     * The migration database class used for the reset. By default (null) every class in
+     * BaseScripts::MIGRATION_DATABASES is registered and the scheme of DBDRIVER_CONNECTION picks
+     * one, so a MySQL, PostgreSQL or SQLite project needs no override.
+     *
+     * @return class-string|null
      */
-    protected function getDatabaseClass(): string
+    protected function getDatabaseClass(): ?string
     {
-        return MySqlDatabase::class;
+        return null;
     }
 
     /**
@@ -74,7 +78,10 @@ abstract class BaseApiTestCase extends TestCase
             if (Config::definition()?->getCurrentEnvironment() != "test") {
                 throw new Exception("This test can only be executed in test environment");
             }
-            Migration::registerDatabase($this->getDatabaseClass());
+            $databaseClass = $this->getDatabaseClass();
+            foreach ($databaseClass !== null ? [$databaseClass] : BaseScripts::MIGRATION_DATABASES as $class) {
+                Migration::registerDatabase($class);
+            }
             $migration = new Migration(new Uri(Config::get('DBDRIVER_CONNECTION')), $this->getMigrationsPath());
             $migration->prepareEnvironment();
             $migration->reset();

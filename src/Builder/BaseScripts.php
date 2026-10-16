@@ -29,6 +29,12 @@ use ReflectionException;
 
 abstract class BaseScripts
 {
+    /**
+     * The migration database classes ./gluo and the API tests register. Migration picks the
+     * one matching the scheme of DBDRIVER_CONNECTION (mysql://, pgsql:// or postgres://, sqlite://).
+     */
+    public const MIGRATION_DATABASES = [MySqlDatabase::class, PgsqlDatabase::class, SqliteDatabase::class];
+
     protected string $workdir;
 
     public function __construct()
@@ -84,9 +90,9 @@ abstract class BaseScripts
      */
     protected function registerMigrationDatabases(): void
     {
-        Migration::registerDatabase(MySqlDatabase::class);
-        Migration::registerDatabase(PgsqlDatabase::class);
-        Migration::registerDatabase(SqliteDatabase::class);
+        foreach (self::MIGRATION_DATABASES as $databaseClass) {
+            Migration::registerDatabase($databaseClass);
+        }
     }
 
     // --- Migrate ---
