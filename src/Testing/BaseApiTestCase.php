@@ -28,7 +28,7 @@ abstract class BaseApiTestCase extends TestCase
             throw new Exception("Could not read the OpenAPI definition at $openApiPath");
         }
 
-        $this->setSchema(Schema::getInstance($openApiJson));
+        $this->setSchema(Schema::fromJson($openApiJson));
         $this->resetDb();
     }
 
