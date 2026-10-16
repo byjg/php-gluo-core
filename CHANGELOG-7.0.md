@@ -44,22 +44,30 @@
   | `./gluo openapi`, `./gluo openapi:check` | `composer openapi`, `composer openapi:check` |
   | `./gluo terminal` | `composer terminal` |
 
-  Project commands are declared in `config/commands.php` as
-  `'user:cleanup' => 'App/Service/Maintenance::cleanOldRecords'` and run through
-  Scriptify with the container returned by `config/scriptify-bootstrap.php`. Arguments are
+  Project commands come from a `ByJG\Scriptify\CommandProvider` class of the project,
+  which the `./gluo` script passes to the launcher:
+  `new Launcher(__DIR__, new \App\Command\Commands())`. Its `commands()` maps a name to a
+  target with class references: `'user:cleanup' => Maintenance::class . '::cleanOldRecords'`,
+  or a class for every public method it declares, in kebab-case
+  (`'payment' => PaymentCommands::class` gives `payment:create`, `payment:clean-old-records`,
+  ...). A typo fails in the IDE and in Psalm, and a rename is refactor-safe. Arguments are
   positional and map to the method parameters; `./gluo user:cleanup --help` prints the
-  method's PHPDoc.
+  method's PHPDoc, and `./gluo list` its first line.
 
-  A target without `::` names a class, and every public method it declares becomes a
-  command under that name, in kebab-case: `'payment' => 'App/Command/PaymentCommands'`
-  gives `payment:create`, `payment:clean-old-records`, ... Static, magic (`__*`) and
-  inherited methods are not commands; keep helpers `protected`. Both forms can be mixed,
-  but a name produced twice (an explicit command and a class method, or `fooBar` and
-  `foo_bar`) is refused with an error. A class that does not exist is reported as an
-  invalid target.
+  The registry, the class expansion, the name rules, the help and the project rows of
+  `list --check` are Scriptify's `Launcher`; `ByJG\Gluo\Console\Launcher` extends it with
+  the built-ins, `--env` and the database rows, and reserves the built-in names. The class
+  of a project command is built by the Gluo container (`Config::getContainer()`), only when
+  a project command runs or `list --check` asks `has()`: `./gluo list` and the built-ins
+  never build it.
 
-  `./gluo list` describes each project command with the first line of its method's PHPDoc,
-  and shows the target when the method has none.
+- `./gluo --env=<env> install [--template=systemd|crond|upstart|initd] <command> [args...]`
+  installs a project command as a system service, and `./gluo uninstall <command>` removes
+  it. The service runs `./gluo` itself, so the Gluo container is built when it starts, and
+  its command line is written in full: the PHP binary, the absolute path to `./gluo`,
+  `--env`, the command and its arguments, in the project root. The command must pass
+  `list --check`. The service is named after the project directory and the command
+  (`shop-payment-sweep`), or `--name`. Scriptify's `installCommand()` writes it.
 
   `--env=<env>` (also `--env <env>` and `-e <env>`, before or after the command) is
   consumed by the launcher and exported as `APP_ENV` before Config is initialised.

@@ -12,7 +12,7 @@ class LauncherTest extends LauncherTestCase
 
     public function testNoArgumentsListsBuiltInAndProjectCommands(): void
     {
-        $this->writeCommands(['user:cleanup' => self::TARGET, 'mail:welcome' => 'Tests/Fixture/LauncherCommands::fail']);
+        $this->commands = ['user:cleanup' => self::TARGET, 'mail:welcome' => 'Tests/Fixture/LauncherCommands::fail'];
 
         [$exitCode, $stdOut, $stdErr] = $this->gluo();
 
@@ -24,6 +24,7 @@ class LauncherTest extends LauncherTestCase
         // The PHPDoc summary describes a command; the target is shown when there is none.
         $this->assertStringContainsString("  user:cleanup           Delete records older than the given number of days.\n", $stdOut);
         $this->assertStringContainsString("  mail:welcome           Tests/Fixture/LauncherCommands::fail\n", $stdOut);
+        $this->assertMatchesRegularExpression('/^  install +Install a project command as a system service/m', $stdOut);
         // Project commands are sorted by name and come after the built-in group.
         $this->assertGreaterThan(strpos($stdOut, "\nProject\n"), strpos($stdOut, 'mail:welcome'));
         $this->assertGreaterThan(strpos($stdOut, 'mail:welcome'), strpos($stdOut, 'user:cleanup'));
@@ -31,12 +32,12 @@ class LauncherTest extends LauncherTestCase
         $this->assertSame([], $this->scripts->calls);
     }
 
-    public function testListWithoutRegistryFile(): void
+    public function testListWithoutProjectCommands(): void
     {
         [$exitCode, $stdOut] = $this->gluo('list');
 
         $this->assertSame(0, $exitCode);
-        $this->assertStringContainsString('(none: add them to config/commands.php)', $stdOut);
+        $this->assertStringContainsString('(none: add them to Tests\Fixture\ArrayCommands)', $stdOut);
     }
 
     public static function builtInProvider(): array
@@ -114,7 +115,7 @@ class LauncherTest extends LauncherTestCase
 
     public function testComposerAliasFormNeverReachesProjectCommands(): void
     {
-        $this->writeCommands(['migrate:seed' => self::TARGET]);
+        $this->commands = ['migrate:seed' => self::TARGET];
 
         [$exitCode, $stdOut, $stdErr] = $this->gluo('migrate', 'seed');
 
@@ -140,7 +141,7 @@ class LauncherTest extends LauncherTestCase
 
     public function testProjectCommandRunsThroughTheContainerWithPositionalArguments(): void
     {
-        $this->writeCommands(['user:cleanup' => self::TARGET]);
+        $this->commands = ['user:cleanup' => self::TARGET];
 
         [$exitCode, $stdOut, $stdErr] = $this->gluo('--env=prod', 'user:cleanup', '30', 'audit_log');
 
@@ -150,81 +151,29 @@ class LauncherTest extends LauncherTestCase
         $this->assertSame("built by container: days=30 table='audit_log' env=prod\n", $stdOut);
     }
 
-    public function testProjectCommandOptionalArgumentAndBackslashTarget(): void
+    public function testClassTargetCommandsRunThroughTheContainer(): void
     {
-        $this->writeCommands(['user:cleanup' => '\\' . LauncherCommands::class . '::cleanOldRecords']);
+        $this->commands = ['tool' => 'Tests/Fixture/LauncherCommands'];
 
-        [$exitCode, $stdOut] = $this->gluo('user:cleanup', '30');
-
+        [$exitCode, $stdOut] = $this->gluo('list');
         $this->assertSame(0, $exitCode);
-        $this->assertSame("built by container: days=30 table=NULL env=\n", $stdOut);
-    }
-
-    public function testClassTargetExposesEachPublicMethodAsACommand(): void
-    {
-        $this->writeCommands(['tool' => 'Tests/Fixture/LauncherCommands']);
-
-        [$exitCode, $stdOut, $stdErr] = $this->gluo('list');
-
-        $this->assertSame(0, $exitCode);
-        $this->assertSame('', $stdErr);
         $project = substr($stdOut, (int) strpos($stdOut, "\nProject\n"));
         $this->assertSame(
             "\nProject\n"
             . "  tool:clean-old-records Delete records older than the given number of days.\n"
-            . "  tool:fail              Tests/Fixture/LauncherCommands::fail\n",
+            . "  tool:fail              Tests\\Fixture\\LauncherCommands::fail\n",
             $project
         );
 
         [$exitCode, $stdOut, $stdErr] = $this->gluo('tool:clean-old-records', '30', 'audit_log');
-
         $this->assertSame('', $stdErr);
         $this->assertSame(0, $exitCode);
         $this->assertSame("built by container: days=30 table='audit_log' env=\n", $stdOut);
-
-        [$exitCode, $stdOut] = $this->gluo('tool:clean-old-records', '--help');
-
-        $this->assertSame(0, $exitCode);
-        $this->assertStringContainsString("Usage: \n./gluo tool:clean-old-records <days> [table] \n", $stdOut);
-    }
-
-    public function testClassTargetSkipsInheritedStaticAndMagicMethods(): void
-    {
-        $this->writeCommands(['child' => 'Tests\Fixture\LauncherChildCommands']);
-
-        [$exitCode, $stdOut] = $this->gluo('list');
-
-        $this->assertSame(0, $exitCode);
-        $project = substr($stdOut, (int) strpos($stdOut, "\nProject\n"));
-        $this->assertSame("\nProject\n  child:own-command      Run the child's own command.\n", $project);
-    }
-
-    public function testClassTargetCollidingWithAnExplicitCommandIsRefused(): void
-    {
-        $this->writeCommands(['tool' => 'Tests/Fixture/LauncherCommands', 'tool:fail' => self::TARGET]);
-
-        foreach ([['list'], ['tool:fail'], ['tool:clean-old-records', '1']] as $arguments) {
-            [$exitCode, $stdOut, $stdErr] = $this->gluo(...$arguments);
-
-            $this->assertSame(1, $exitCode);
-            $this->assertStringNotContainsString('built by container', $stdOut);
-            $this->assertStringContainsString('Command "tool:fail" is defined more than once in config/commands.php', $stdErr);
-        }
-    }
-
-    public function testClassTargetWithTwoMethodsOfTheSameCommandNameIsRefused(): void
-    {
-        $this->writeCommands(['mail' => 'Tests/Fixture/LauncherCollidingCommands']);
-
-        [$exitCode, , $stdErr] = $this->gluo('list');
-
-        $this->assertSame(1, $exitCode);
-        $this->assertStringContainsString('Command "mail:send-mail" is defined more than once', $stdErr);
     }
 
     public function testProjectCommandHelpUsesLauncherSyntax(): void
     {
-        $this->writeCommands(['user:cleanup' => self::TARGET]);
+        $this->commands = ['user:cleanup' => self::TARGET];
 
         [$exitCode, $stdOut] = $this->gluo('user:cleanup', '--help');
 
@@ -266,82 +215,24 @@ class LauncherTest extends LauncherTestCase
 
     public function testBuiltInNameUsedByProjectIsRefused(): void
     {
-        $this->writeCommands(['migrate:update' => self::TARGET]);
+        $this->commands = ['migrate:update' => self::TARGET];
 
         [$exitCode, $stdOut, $stdErr] = $this->gluo('migrate:update');
 
         $this->assertSame(1, $exitCode);
         $this->assertSame('', $stdOut);
-        $this->assertStringContainsString('"migrate:update" is a built-in command', $stdErr);
+        $this->assertStringContainsString('"migrate:update" is reserved and cannot be used as a command name. Rename it in Tests\Fixture\ArrayCommands.', $stdErr);
         $this->assertSame([], $this->scripts->calls);
-    }
-
-    public function testInvalidNameAndInvalidTargetAreRefused(): void
-    {
-        $this->writeCommands(['User:Cleanup' => self::TARGET, 'no:method' => 'Tests/Fixture/DoesNotExist']);
-
-        [$exitCode, , $stdErr] = $this->gluo('User:Cleanup', '1');
-        $this->assertSame(1, $exitCode);
-        $this->assertStringContainsString('Invalid command name "User:Cleanup"', $stdErr);
-
-        [$exitCode, , $stdErr] = $this->gluo('no:method');
-        $this->assertSame(1, $exitCode);
-        $this->assertStringContainsString('Invalid target for "no:method"', $stdErr);
-    }
-
-    public function testClassMissingFromContainerIsRefusedNotBuiltWithNew(): void
-    {
-        $this->writeCommands(['other:run' => 'Tests/Fixture/RecordingScripts::runCheckOpenApi']);
-
-        [$exitCode, , $stdErr] = $this->gluo('other:run');
-
-        $this->assertSame(1, $exitCode);
-        $this->assertStringContainsString('the container has no entry for "Tests\Fixture\RecordingScripts"', $stdErr);
-    }
-
-    public function testBootstrapMustReturnAContainer(): void
-    {
-        $this->writeCommands(['user:cleanup' => self::TARGET]);
-        $this->writeBootstrap('return 1;');
-
-        [$exitCode, , $stdErr] = $this->gluo('user:cleanup', '1');
-
-        $this->assertSame(1, $exitCode);
-        $this->assertStringContainsString('config/scriptify-bootstrap.php must return a PSR-11 container', $stdErr);
     }
 
     public function testBuiltInDoesNotLoadTheContainer(): void
     {
-        $this->writeBootstrap('throw new \RuntimeException("container must not be loaded");');
+        // The Config container: this package has no config/, so building it would fail.
+        $this->container = null;
 
         [$exitCode, , $stdErr] = $this->gluo('migrate:update');
 
         $this->assertSame(0, $exitCode);
         $this->assertSame('', $stdErr);
-    }
-
-    public function testCommandExceptionGoesToStdErrWithTraceOnlyWhenVerbose(): void
-    {
-        $this->writeCommands(['boom:now' => 'Tests/Fixture/LauncherCommands::fail']);
-
-        [$exitCode, $stdOut, $stdErr] = $this->gluo('boom:now');
-        $this->assertSame(1, $exitCode);
-        $this->assertSame('', $stdOut);
-        $this->assertSame("Something went wrong\n", $stdErr);
-
-        [$exitCode, , $stdErr] = $this->gluo('boom:now', '-v');
-        $this->assertSame(1, $exitCode);
-        $this->assertStringStartsWith("Something went wrong\n\n#0 ", $stdErr);
-        $this->assertStringContainsString('LauncherCommands->fail()', $stdErr);
-    }
-
-    public function testRegistryMustReturnAnArray(): void
-    {
-        file_put_contents($this->rootDir . '/config/commands.php', '<?php return "nope";');
-
-        [$exitCode, , $stdErr] = $this->gluo('list');
-
-        $this->assertSame(1, $exitCode);
-        $this->assertStringContainsString('config/commands.php must return an array', $stdErr);
     }
 }

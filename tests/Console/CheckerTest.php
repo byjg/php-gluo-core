@@ -5,6 +5,8 @@ namespace Tests\Console;
 use ByJG\Config\Config;
 use ByJG\Config\Definition;
 use ByJG\Config\Environment;
+use Psr\Container\ContainerInterface;
+use RuntimeException;
 
 class CheckerTest extends LauncherTestCase
 {
@@ -66,14 +68,19 @@ class CheckerTest extends LauncherTestCase
     public function testEverythingOkExitsZeroAndBuildsNothing(): void
     {
         $this->withConfig(['DBDRIVER_CONNECTION' => 'sqlite://' . $this->sqliteFile]);
-        $this->writeCommands(['user:cleanup' => 'Tests/Fixture/LauncherCommands::cleanOldRecords']);
+        $this->commands = ['user:cleanup' => 'Tests/Fixture/LauncherCommands::cleanOldRecords'];
         // has() answers, get() must never be called by --check.
-        $this->writeBootstrap(
-            'return new class implements \Psr\Container\ContainerInterface {'
-            . ' public function get(string $id): mixed { throw new \RuntimeException("--check must not build"); }'
-            . ' public function has(string $id): bool { return true; }'
-            . ' };'
-        );
+        $this->container = new class implements ContainerInterface {
+            public function get(string $id): mixed
+            {
+                throw new RuntimeException('--check must not build');
+            }
+
+            public function has(string $id): bool
+            {
+                return true;
+            }
+        };
 
         [$exitCode, $stdOut, $stdErr] = $this->gluo('list', '--check');
         $rows = $this->rows($stdOut);
@@ -152,57 +159,54 @@ class CheckerTest extends LauncherTestCase
         $this->assertSame(['OK'], $rows['openapi']);
     }
 
+    /**
+     * The statuses themselves are Scriptify's (its LauncherTest); here, what Gluo adds: the
+     * built-in names are reserved, the rest of a built-in group is open, and the Gluo
+     * container answers has().
+     */
     public function testProjectStatuses(): void
     {
         $this->withConfig(['DBDRIVER_CONNECTION' => 'sqlite://' . $this->sqliteFile]);
-        $this->writeCommands([
+        $this->commands = [
             'user:cleanup' => 'Tests/Fixture/LauncherCommands::cleanOldRecords',
-            'Bad_Name' => 'Tests/Fixture/LauncherCommands::cleanOldRecords',
             'migrate:update' => 'Tests/Fixture/LauncherCommands::cleanOldRecords',
+            'install' => 'Tests/Fixture/LauncherCommands::cleanOldRecords',
             'migrate:seed' => 'Tests/Fixture/LauncherCommands::cleanOldRecords',
-            'no:class:target' => 'Tests/Fixture/DoesNotExist',
-            'tool' => 'Tests/Fixture/LauncherCommands',
-            'not:string' => ['Tests/Fixture/LauncherCommands', 'fail'],
-            'no:class' => 'Tests/Fixture/DoesNotExist::run',
             'typo:method' => 'Tests/Fixture/LauncherCommands::cleanOldRecord',
-            'not:public' => 'Tests/Fixture/LauncherCommands::hidden',
             'not:registered' => 'Tests/Fixture/RecordingScripts::runCheckOpenApi',
-        ]);
+        ];
 
         [$exitCode, $stdOut] = $this->gluo('list', '--check');
         $rows = $this->rows($stdOut);
 
         $this->assertSame(1, $exitCode);
-        $this->assertSame('OK', $rows['user:cleanup'][0]);
-        $this->assertSame('INVALID_NAME', $rows['Bad_Name'][0]);
-        $this->assertSame('INVALID_TARGET', $rows['no:class:target'][0]);
-        $this->assertSame(['OK', 'Tests/Fixture/LauncherCommands::cleanOldRecords'], $rows['tool:clean-old-records']);
-        $this->assertSame(['OK', 'Tests/Fixture/LauncherCommands::fail'], $rows['tool:fail']);
-        $this->assertSame(['INVALID_TARGET'], $rows['not:string']);
-        $this->assertSame('MISSING_CLASS', $rows['no:class'][0]);
-        $this->assertSame(['MISSING_METHOD', 'Tests/Fixture/LauncherCommands::cleanOldRecord'], $rows['typo:method']);
-        $this->assertSame('NOT_PUBLIC', $rows['not:public'][0]);
-        $this->assertSame('NOT_IN_CONTAINER', $rows['not:registered'][0]);
-        // A project command inside a built-in group is fine; the exact built-in name is not.
+        $this->assertSame(['OK', 'Tests/Fixture/LauncherCommands::cleanOldRecords'], $rows['user:cleanup']);
         $this->assertSame('OK', $rows['migrate:seed'][0]);
+        $this->assertSame(['MISSING_METHOD', 'Tests/Fixture/LauncherCommands::cleanOldRecord'], $rows['typo:method']);
+        $this->assertSame('NOT_IN_CONTAINER', $rows['not:registered'][0]);
         $this->assertStringContainsString("  migrate:update         RESERVED ", $stdOut);
+        $this->assertStringContainsString("  install                RESERVED ", $stdOut);
     }
 
-    public function testContainerFailureMarksEveryProjectCommand(): void
+    /**
+     * Without a container given, the project rows ask the Config container.
+     */
+    public function testTheConfigContainerAnswersByDefault(): void
     {
         $this->withConfig(['DBDRIVER_CONNECTION' => 'sqlite://' . $this->sqliteFile]);
-        $this->writeCommands([
+        $this->commands = [
             'user:cleanup' => 'Tests/Fixture/LauncherCommands::cleanOldRecords',
             'no:class' => 'Tests/Fixture/DoesNotExist::run',
-        ]);
-        $this->writeBootstrap('throw new \RuntimeException("container is broken");');
+        ];
+        // The Config container: the configuration has no definition for the command class.
+        $this->container = null;
 
         [$exitCode, $stdOut] = $this->gluo('list', '--check');
         $rows = $this->rows($stdOut);
 
         $this->assertSame(1, $exitCode);
-        $this->assertSame(['ERROR', 'container is broken'], $rows['user:cleanup']);
-        $this->assertSame(['ERROR', 'container is broken'], $rows['no:class']);
+        $this->assertSame('NOT_IN_CONTAINER', $rows['user:cleanup'][0]);
+        $this->assertSame('MISSING_CLASS', $rows['no:class'][0]);
         // The built-ins are checked independently of the container.
         $this->assertSame(['OK'], $rows['migrate:update']);
     }

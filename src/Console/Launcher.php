@@ -2,13 +2,14 @@
 
 namespace ByJG\Gluo\Console;
 
+use ByJG\Config\Config;
 use ByJG\Gluo\Builder\BaseScripts;
+use ByJG\Scriptify\CommandProvider;
 use ByJG\Scriptify\Console\TerminalCommand;
-use ByJG\Scriptify\Runner;
+use ByJG\Scriptify\Launcher as ScriptifyLauncher;
+use ByJG\Scriptify\Scriptify;
 use Exception;
 use Psr\Container\ContainerInterface;
-use ReflectionClass;
-use ReflectionMethod;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Input\ArrayInput;
 use Throwable;
@@ -16,11 +17,12 @@ use Throwable;
 /**
  * The `./gluo` command line entry point.
  *
- * Built-in commands (migrate:*, openapi, codegen, terminal) run through the project's
- * Builder\Scripts. Project commands are read from config/commands.php, which maps a short
- * name to a Scriptify target, and run through Scriptify with the Gluo container.
+ * Project commands come from the project's CommandProvider, which the ./gluo script passes
+ * in, and run through Scriptify's Launcher with the Gluo container. The built-in commands
+ * (migrate:*, codegen:*, openapi, terminal, install, uninstall) run through the project's
+ * Builder\Scripts, and the provider cannot take their names.
  */
-class Launcher
+class Launcher extends ScriptifyLauncher
 {
     /** Built-in command name => one-line description. */
     public const BUILT_IN = [
@@ -30,6 +32,7 @@ class Launcher
         'codegen:repository' => 'Generate the repository for a table (alias: codegen:repo)',
         'codegen:service' => 'Generate the service for a table',
         'codegen:test' => 'Generate the controller test for a table',
+        'install' => 'Install a project command as a system service (systemd, crond, upstart, initd)',
         'migrate:create' => 'Create the migration version table (alias: migrate:install)',
         'migrate:down' => 'Migrate down to a specific version or 0',
         'migrate:reset' => 'Reset the database to base.sql and optionally migrate to a version',
@@ -39,6 +42,7 @@ class Launcher
         'openapi' => 'Generate the OpenAPI spec from the controller attributes',
         'openapi:check' => 'Warn when the OpenAPI spec is older than its sources',
         'terminal' => 'Open an interactive PHP terminal',
+        'uninstall' => 'Remove a service created by install',
     ];
 
     /** Alias => built-in command. */
@@ -54,9 +58,10 @@ class Launcher
      */
     public const COMPATIBILITY_FORMS = ['codegen', 'migrate'];
 
-    public const BOOTSTRAP_FILE = 'config/scriptify-bootstrap.php';
-    public const COMMANDS_FILE = 'config/commands.php';
     public const TERMINAL_PRELOAD = 'templates/scriptify/scriptify.php';
+
+    /** The launcher script, in the project root: what an installed service runs. */
+    public const SCRIPT = 'gluo';
 
     protected string $rootDir;
 
@@ -65,45 +70,20 @@ class Launcher
 
     protected ?BaseScripts $scripts;
 
-    /** @var resource */
-    protected $stdErr;
-
-    protected ?ContainerInterface $container = null;
-
     /**
      * @param string $rootDir The project root, passed explicitly so the launcher works from
      *                        any working directory and when gluo-core is symlinked.
+     * @param CommandProvider $commands The project commands.
      * @param BaseScripts|null $scripts Defaults to the project's Builder\Scripts.
      * @param resource|null $stdErr
+     * @param ContainerInterface|null $container Defaults to the Gluo container
+     *                        (Config::getContainer()), built when a project command needs it.
      */
-    public function __construct(string $rootDir, ?BaseScripts $scripts = null, $stdErr = null)
+    public function __construct(string $rootDir, CommandProvider $commands, ?BaseScripts $scripts = null, $stdErr = null, ?ContainerInterface $container = null)
     {
+        parent::__construct($commands, $container, $stdErr);
         $this->rootDir = rtrim($rootDir, '/');
         $this->scripts = $scripts;
-        $this->stdErr = $stdErr ?? STDERR;
-    }
-
-    /**
-     * @param string[] $argv The raw argument vector, script name included.
-     * @return int The process exit code.
-     */
-    public function run(array $argv): int
-    {
-        $verbose = false;
-
-        try {
-            $arguments = $this->applyEnvironment(array_slice(array_values($argv), 1));
-            $verbose = array_intersect($arguments, ['-v', '-vv', '-vvv']) !== [];
-            $command = array_shift($arguments) ?? 'list';
-
-            return $this->dispatch($command, $arguments);
-        } catch (Throwable $ex) {
-            fwrite($this->stdErr, $ex->getMessage() . "\n");
-            if ($verbose) {
-                fwrite($this->stdErr, "\n" . $ex->getTraceAsString() . "\n");
-            }
-            return 1;
-        }
     }
 
     public static function isBuiltIn(string $name): bool
@@ -111,134 +91,20 @@ class Launcher
         return isset(self::BUILT_IN[$name]) || isset(self::ALIASES[$name]) || in_array($name, self::COMPATIBILITY_FORMS, true);
     }
 
-    public static function isValidName(string $name): bool
+    #[\Override]
+    public function isReserved(string $name): bool
     {
-        return preg_match('/^[a-z0-9:-]+$/', $name) === 1;
+        return parent::isReserved($name) || self::isBuiltIn($name);
     }
 
     /**
-     * The project command registry: command name => Scriptify target.
-     *
-     * A target without "::" names a class: each public method it declares becomes
-     * "<name>:<method-in-kebab-case>". A class that does not exist is kept as it is, so it
-     * is reported as an invalid target.
-     *
-     * @return array<array-key, mixed>
-     * @throws Exception
+     * The Gluo container: the one the Config facade uses, built on first use. Listing the
+     * commands and running a built-in never build it.
      */
-    public function getProjectCommands(): array
+    #[\Override]
+    protected function getContainer(): ContainerInterface
     {
-        $file = $this->rootDir . '/' . self::COMMANDS_FILE;
-        if (!file_exists($file)) {
-            return [];
-        }
-
-        $commands = require $file;
-        if (!is_array($commands)) {
-            throw new Exception(self::COMMANDS_FILE . ' must return an array of command name => "Class::method" or "Class".');
-        }
-
-        $expanded = [];
-        foreach ($commands as $name => $target) {
-            $entries = self::expandClassTarget((string) $name, $target) ?? [$name => $target];
-            foreach ($entries as $entryName => $entryTarget) {
-                self::addCommand($expanded, $entryName, $entryTarget);
-            }
-        }
-        ksort($expanded);
-
-        return $expanded;
-    }
-
-    /**
-     * @param array<array-key, mixed> $commands
-     * @throws Exception When the name is already there.
-     */
-    protected static function addCommand(array &$commands, int|string $name, mixed $target): void
-    {
-        if (array_key_exists($name, $commands)) {
-            throw new Exception("Command \"$name\" is defined more than once in " . self::COMMANDS_FILE . '.');
-        }
-        $commands[$name] = $target;
-    }
-
-    /**
-     * @return array<string, string>|null The commands of a class target; null for any other target.
-     * @throws Exception When two methods give the same command name.
-     */
-    protected static function expandClassTarget(string $name, mixed $target): ?array
-    {
-        if (!is_string($target) || str_contains($target, '::')) {
-            return null;
-        }
-        $class = ltrim(Runner::normalize($target), '\\');
-        if (!class_exists($class)) {
-            return null;
-        }
-
-        $entries = [];
-        foreach ((new ReflectionClass($class))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if ($method->isStatic() || $method->getDeclaringClass()->getName() !== $class || str_starts_with($method->getName(), '__')) {
-                continue;
-            }
-            self::addCommand($entries, $name . ':' . self::toKebabCase($method->getName()), $target . '::' . $method->getName());
-        }
-
-        return $entries;
-    }
-
-    /**
-     * The first line of the target method's PHPDoc, or "" when there is none or the target
-     * does not resolve to a method.
-     */
-    protected static function getSummary(mixed $target): string
-    {
-        if (!is_string($target) || !str_contains($target, '::')) {
-            return '';
-        }
-        [$class, $method] = explode('::', ltrim(Runner::normalize($target), '\\'), 2) + ['', ''];
-        if (!class_exists($class) || !method_exists($class, $method)) {
-            return '';
-        }
-
-        foreach (explode("\n", (string) (new ReflectionMethod($class, $method))->getDocComment()) as $line) {
-            $line = trim((string) preg_replace('~^\s*(/\*\*|\*/|\*)~', '', $line));
-            $line = trim((string) preg_replace('~\*/$~', '', $line));
-            if ($line !== '') {
-                return str_starts_with($line, '@') ? '' : $line;
-            }
-        }
-
-        return '';
-    }
-
-    protected static function toKebabCase(string $method): string
-    {
-        return strtolower((string) preg_replace('/(?<=[a-z0-9])(?=[A-Z])/', '-', str_replace('_', '-', $method)));
-    }
-
-    /**
-     * The Gluo PSR-11 container, as returned by the Scriptify bootstrap file.
-     *
-     * @throws Exception
-     */
-    public function getContainer(): ContainerInterface
-    {
-        if ($this->container !== null) {
-            return $this->container;
-        }
-
-        $file = $this->rootDir . '/' . self::BOOTSTRAP_FILE;
-        if (!file_exists($file)) {
-            throw new Exception(self::BOOTSTRAP_FILE . ' was not found. It must return the PSR-11 container.');
-        }
-
-        $container = require $file;
-        if (!$container instanceof ContainerInterface) {
-            throw new Exception(self::BOOTSTRAP_FILE . ' must return a PSR-11 container.');
-        }
-
-        return $this->container = $container;
+        return $this->container ??= Config::getContainer();
     }
 
     /**
@@ -258,6 +124,12 @@ class Launcher
         return $this->scripts;
     }
 
+    #[\Override]
+    protected function scriptName(): string
+    {
+        return './' . self::SCRIPT;
+    }
+
     /**
      * Consume the global --env option and export it as APP_ENV, before anything
      * initialises Config. Accepts --env=<env>, --env <env> and -e <env>, anywhere.
@@ -266,7 +138,8 @@ class Launcher
      * @return string[] The arguments without the option.
      * @throws Exception
      */
-    protected function applyEnvironment(array $arguments): array
+    #[\Override]
+    protected function prepare(array $arguments): array
     {
         $env = null;
         $remaining = [];
@@ -298,58 +171,28 @@ class Launcher
      * @param string[] $arguments
      * @throws Throwable
      */
+    #[\Override]
     protected function dispatch(string $command, array $arguments): int
     {
-        if (in_array($command, ['list', '--help', '-h'], true)) {
-            return in_array('--check', $arguments, true)
-                ? (new Checker($this))->report()
-                : $this->listCommands();
-        }
-
         // Compatibility form for the `composer migrate -- <sub>` alias. It reaches the
         // built-in subcommands only, never a project command in the same group.
         if ($command === 'migrate') {
             [$command, $arguments] = $this->expandMigrate($arguments);
         }
 
-        $projectCommands = $this->getProjectCommands();
-        $wantsHelp = array_intersect($arguments, ['--help', '-h']) !== [];
-
         if (self::isBuiltIn($command)) {
-            if (isset($projectCommands[$command])) {
-                throw new Exception("\"$command\" is a built-in command and cannot be used as a project command name. Rename it in " . self::COMMANDS_FILE . '.');
+            if (isset($this->getCommands()[$command])) {
+                throw $this->reservedName($command);
             }
             $command = self::ALIASES[$command] ?? $command;
-            if ($wantsHelp) {
+            if (array_intersect($arguments, ['--help', '-h']) !== []) {
                 echo $this->builtInHelp($command);
                 return 0;
             }
             return $this->runBuiltIn($command, $arguments);
         }
 
-        if (!isset($projectCommands[$command])) {
-            throw new Exception("Command \"$command\" is not defined. Run ./gluo list to see the available commands.");
-        }
-        if (!self::isValidName($command)) {
-            throw new Exception("Invalid command name \"$command\": only lowercase letters, digits, ':' and '-' are allowed.");
-        }
-        $target = $projectCommands[$command];
-        if (!is_string($target) || !str_contains($target, '::')) {
-            throw new Exception("Invalid target for \"$command\" in " . self::COMMANDS_FILE . ': expected "Namespace/Class::method" or an existing "Namespace/Class".');
-        }
-
-        // -v belongs to the launcher (stack trace on failure), not to the method.
-        $arguments = array_values(array_diff($arguments, ['-v', '-vv', '-vvv', '--help', '-h']));
-
-        $runner = new Runner($target, $arguments, false, $this->getContainer());
-        if ($wantsHelp) {
-            $runner->showDocs("./gluo $command");
-            echo "\n";
-            return 0;
-        }
-        $runner->execute();
-
-        return 0;
+        return parent::dispatch($command, $arguments);
     }
 
     /**
@@ -407,9 +250,111 @@ class Launcher
                 $this->getScripts()->runCodeGenerator($arguments);
                 return 0;
 
+            case 'install':
+                return $this->install($arguments);
+
+            case 'uninstall':
+                return $this->uninstall($arguments);
+
             default:
                 return $this->runTerminal();
         }
+    }
+
+    /**
+     * `./gluo --env=<env> install [--template=<t>] [--name=<service>] [--description=<d>] <command> [args...]`
+     *
+     * The service runs ./gluo itself, so the Gluo container is built when it starts. Its
+     * command line is written in full: the PHP binary, the absolute path to ./gluo, the
+     * environment, the command and its arguments, in the project root.
+     *
+     * @param string[] $arguments
+     * @throws Throwable
+     */
+    protected function install(array $arguments): int
+    {
+        [$options, $arguments] = $this->serviceOptions($arguments, ['template', 'name', 'description']);
+        $name = array_shift($arguments) ?? throw new Exception('Which command? Usage: ./gluo --env=<env> install [--template=systemd] <command> [args...]');
+
+        $env = (string) getenv('APP_ENV');
+        if ($env === '') {
+            throw new Exception('The service needs an environment: ./gluo --env=<env> install ' . $name);
+        }
+        $status = $this->check()[$name] ?? null;
+        if ($status === null) {
+            throw new Exception("Command \"$name\" is not defined. Run ./gluo list to see the available commands.");
+        }
+        if ($status[0] !== self::OK) {
+            throw new Exception("Cannot install \"$name\": {$status[0]} {$status[1]}");
+        }
+
+        $command = PHP_BINARY . ' ' . escapeshellarg($this->rootDir . '/' . self::SCRIPT)
+            . ' --env=' . escapeshellarg($env) . ' ' . $name;
+        foreach ($arguments as $argument) {
+            $command .= ' ' . escapeshellarg($argument);
+        }
+
+        $template = $options['template'] ?? 'systemd';
+        $service = $options['name'] ?? $this->serviceName($name);
+        Scriptify::installCommand($service, $command, $this->rootDir, $template, $options['description'] ?? "$name ($env)");
+        echo "Installed the $template service \"$service\": $command\n";
+
+        return 0;
+    }
+
+    /**
+     * `./gluo uninstall [--name=<service>] <command>`
+     *
+     * @param string[] $arguments
+     * @throws Throwable
+     */
+    protected function uninstall(array $arguments): int
+    {
+        [$options, $arguments] = $this->serviceOptions($arguments, ['name']);
+        $service = $options['name'] ?? $this->serviceName(
+            array_shift($arguments) ?? throw new Exception('Which command? Usage: ./gluo uninstall <command>')
+        );
+
+        Scriptify::uninstall($service);
+        echo "Removed the service \"$service\"\n";
+
+        return 0;
+    }
+
+    /**
+     * The service name of a command: the project directory and the command,
+     * `shop-payment-sweep` for `payment:sweep` in `shop/`.
+     */
+    protected function serviceName(string $command): string
+    {
+        return trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower(basename($this->rootDir) . '-' . $command)), '-');
+    }
+
+    /**
+     * The --<name>=<value> or --<name> <value> options before the command name.
+     *
+     * @param string[] $arguments
+     * @param string[] $names
+     * @return array{0: array<string, string>, 1: string[]} [options, the rest]
+     * @throws Exception
+     */
+    protected function serviceOptions(array $arguments, array $names): array
+    {
+        $options = [];
+        while (($argument = $arguments[0] ?? null) !== null && str_starts_with($argument, '--')) {
+            array_shift($arguments);
+            [$option, $value] = explode('=', substr($argument, 2), 2) + [1 => null];
+            if (!in_array($option, $names, true)) {
+                throw new Exception("Unknown option --$option. Use: --" . implode(', --', $names) . '.');
+            }
+            $value ??= array_shift($arguments);
+            if ($value === null || $value === '') {
+                throw new Exception("The --$option option requires a value.");
+            }
+            $options[$option] = $value;
+        }
+
+        return [$options, $arguments];
     }
 
     /**
@@ -449,42 +394,50 @@ class Launcher
             return $this->getScripts()->getCodeGeneratorHelp();
         }
 
-        return self::BUILT_IN[$command] . ".\n\nUsage:\n  ./gluo $command\n";
+        $usage = match ($command) {
+            'install' => './gluo --env=<env> install [--template=systemd|crond|upstart|initd] [--name=<service>] [--description=<text>] <command> [args...]',
+            'uninstall' => './gluo uninstall [--name=<service>] <command>',
+            default => "./gluo $command",
+        };
+
+        return self::BUILT_IN[$command] . ".\n\nUsage:\n  $usage\n";
     }
 
-    /**
-     * @throws Exception
-     */
+    #[\Override]
+    protected function usage(): string
+    {
+        return "Usage:\n  ./gluo [--env=<env>] <command> [args...]\n  ./gluo <command> --help\n  ./gluo list [--check]\n";
+    }
+
+    #[\Override]
     protected function listCommands(): int
     {
-        echo "Usage:\n  ./gluo [--env=<env>] <command> [args...]\n  ./gluo <command> --help\n  ./gluo list [--check]\n\n";
+        echo $this->usage() . "\n";
 
         echo "Built-in\n";
         foreach (self::BUILT_IN as $name => $description) {
             echo self::formatRow($name, $description);
         }
 
-        echo "\nProject\n";
-        $projectCommands = $this->getProjectCommands();
-        // The PHPDoc summary describes the command; the target is the fallback when there is none.
-        foreach ($projectCommands as $name => $target) {
-            $summary = self::getSummary($target);
-            echo self::formatRow((string) $name, $summary !== '' ? $summary : (is_string($target) ? $target : '(invalid target)'));
-        }
-        if ($projectCommands === []) {
-            echo "  (none: add them to " . self::COMMANDS_FILE . ")\n";
-        }
+        echo "\n";
+        $this->printCommands('Project');
 
         return 0;
     }
 
-    public static function formatRow(string ...$columns): string
+    /**
+     * The environment, the built-ins with the database they need, and the project commands.
+     */
+    #[\Override]
+    protected function report(): int
     {
-        $row = '  ' . str_pad((string) array_shift($columns), 22);
-        foreach ($columns as $column) {
-            $row .= ' ' . $column;
-        }
+        $env = getenv('APP_ENV');
+        echo 'Environment: ' . (empty($env) ? '(not set)' : $env) . "\n\n";
 
-        return rtrim($row) . "\n";
+        $builtInOk = $this->printReport('Built-in', (new Checker())->checkBuiltIn());
+        echo "\n";
+        $projectOk = $this->printReport('Project', $this->check());
+
+        return $builtInOk && $projectOk ? 0 : 1;
     }
 }

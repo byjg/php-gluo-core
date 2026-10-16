@@ -4,6 +4,8 @@ namespace Tests\Console;
 
 use ByJG\Gluo\Console\Launcher;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
+use Tests\Fixture\ArrayCommands;
 use Tests\Fixture\LauncherCommands;
 use Tests\Fixture\RecordingScripts;
 
@@ -14,6 +16,12 @@ abstract class LauncherTestCase extends TestCase
     /** @var resource */
     protected $stdErr;
     protected string|false $originalAppEnv;
+
+    /** @var array<string, string> The project commands. */
+    protected array $commands = [];
+
+    /** The Gluo container; null for the Config one. */
+    protected ?ContainerInterface $container = null;
 
     #[\Override]
     protected function setUp(): void
@@ -28,12 +36,17 @@ abstract class LauncherTestCase extends TestCase
         $this->stdErr = fopen('php://memory', 'w+');
 
         // The container knows LauncherCommands only; anything else is "not registered".
-        $this->writeBootstrap(
-            'return new class implements \Psr\Container\ContainerInterface {'
-            . ' public function get(string $id): mixed { return new \\' . LauncherCommands::class . '("built by container"); }'
-            . ' public function has(string $id): bool { return $id === \\' . LauncherCommands::class . '::class; }'
-            . ' };'
-        );
+        $this->container = new class implements ContainerInterface {
+            public function get(string $id): mixed
+            {
+                return new LauncherCommands('built by container');
+            }
+
+            public function has(string $id): bool
+            {
+                return $id === LauncherCommands::class;
+            }
+        };
     }
 
     #[\Override]
@@ -53,16 +66,6 @@ abstract class LauncherTestCase extends TestCase
         rmdir($this->rootDir);
     }
 
-    protected function writeBootstrap(string $body): void
-    {
-        file_put_contents($this->rootDir . '/' . Launcher::BOOTSTRAP_FILE, "<?php\n$body\n");
-    }
-
-    protected function writeCommands(array $commands): void
-    {
-        file_put_contents($this->rootDir . '/' . Launcher::COMMANDS_FILE, '<?php return ' . var_export($commands, true) . ';');
-    }
-
     /**
      * Run `./gluo <arguments>` and return [exit code, stdout, stderr].
      *
@@ -75,7 +78,7 @@ abstract class LauncherTestCase extends TestCase
 
         ob_start();
         try {
-            $exitCode = (new Launcher($this->rootDir, $this->scripts, $this->stdErr))->run(['./gluo', ...$arguments]);
+            $exitCode = (new Launcher($this->rootDir, new ArrayCommands($this->commands), $this->scripts, $this->stdErr, $this->container))->run(['./gluo', ...$arguments]);
         } finally {
             $stdOut = (string) ob_get_clean();
         }
