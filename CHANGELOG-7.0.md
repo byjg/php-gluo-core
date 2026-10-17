@@ -67,7 +67,8 @@
   its command line is written in full: the PHP binary, the absolute path to `./gluo`,
   `--env`, the command and its arguments, in the project root. The command must pass
   `list --check`. The service is named after the project directory and the command
-  (`shop-payment-sweep`), or `--name`. Scriptify's `installCommand()` writes it.
+  (`shop-payment-sweep`), or `--name`; `--description` sets its description. Scriptify's
+  `installCommand()` writes it.
 
   `--env=<env>` (also `--env <env>` and `-e <env>`, before or after the command) is
   consumed by the launcher and exported as `APP_ENV` before Config is initialised.
@@ -95,6 +96,22 @@
       return 'Acme - Password Reset';
   }
   ```
+
+- The generated REST controller (Repository pattern) receives its service through the
+  constructor instead of calling `Config::get()` in every method. The project's `Server`
+  must resolve controllers from the container: the starter does it with `withContainer()`
+  in `config/dev/03-api.php` and an `Autowire` rule for the controller namespace in
+  `config/dev/07-controllers.php`. Codegen writes no DI entry for controllers; repositories
+  and services still get one; when `04-repositories.php`/`05-services.php` does not exist,
+  codegen prints a warning to register the class by hand.
+
+- `FakeApiRequester` gives its `MockServer` the Gluo container
+  (`withContainer(Config::getContainer(), allowUnregistered: true)`), so controllers with
+  constructor dependencies work under test as they do in production.
+
+- `codegen` emits `maxLength` for `char` and `varchar` columns, on the model property and on
+  the request body of the generated controllers. Templates get the declared length as
+  `field.openapi_max_length` (`0` for any other type).
 
 ## Bug Fixes
 
