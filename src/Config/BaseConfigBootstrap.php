@@ -39,8 +39,10 @@ abstract class BaseConfigBootstrap implements ConfigInitializeInterface
      * on how the project is deployed, so the project enables it here, e.g.
      * `$definition->getConfigObject('prod')->withCache(new FileSystemCacheEngine());`
      *
-     * Note: addConfigDirectory() will be available once byjg/php-config PR #17 is merged,
-     * enabling package-default configs with scaffold overrides.
+     * To layer config directories (e.g. package defaults overridden by the project), call
+     * `$definition->addConfigDirectory($dir)` for each one; the last directory wins. Once a directory
+     * is added, the default `config/` is no longer used implicitly, so add it too, e.g.
+     * `$definition->withBaseDir($packageDir)->addConfigDirectory(Definition::findBaseDir());`
      */
     protected function configureDefinition(Definition $definition): void
     {

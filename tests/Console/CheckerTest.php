@@ -3,8 +3,10 @@
 namespace Tests\Console;
 
 use ByJG\Config\Config;
+use ByJG\Gluo\Console\Checker;
 use ByJG\Config\Definition;
 use ByJG\Config\Environment;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Container\ContainerInterface;
 use RuntimeException;
 
@@ -157,6 +159,49 @@ class CheckerTest extends LauncherTestCase
         }
         $this->assertStringNotContainsString('s3cr3tpw', $stdOut);
         $this->assertSame(['OK'], $rows['openapi']);
+    }
+
+    public static function maskPasswordProvider(): array
+    {
+        $refused = 'SQLSTATE[HY000] [2002] Connection refused (127.0.0.1:3306)';
+        // connection, message, expected
+        return [
+            'short password in a URL' => [
+                'mysql://root:0@127.0.0.1:3306/db',
+                'Cannot open mysql://root:0@127.0.0.1:3306/db',
+                'Cannot open mysql://root:****@127.0.0.1:3306/db',
+            ],
+            'password-only URL' => [
+                'redis://:0@127.0.0.1:6379',
+                'Cannot open redis://:0@127.0.0.1:6379',
+                'Cannot open redis://:****@127.0.0.1:6379',
+            ],
+            'password "0" outside a URL' => ['mysql://root:0@127.0.0.1:3306/db', $refused, $refused],
+            'short password outside a URL' => ['mysql://root:200@127.0.0.1:3306/db', $refused, $refused],
+            'long password outside a URL' => [
+                'mysql://root:s3cr3tpw@127.0.0.1/db',
+                "Access denied, password 's3cr3tpw'",
+                "Access denied, password '****'",
+            ],
+            'long password encoded outside a URL' => [
+                'mysql://root:p%40ss1@127.0.0.1/db',
+                "Access denied, password 'p%40ss1' / 'p@ss1'",
+                "Access denied, password '****' / '****'",
+            ],
+        ];
+    }
+
+    #[DataProvider('maskPasswordProvider')]
+    public function testMaskPassword(string $connection, string $message, string $expected): void
+    {
+        $checker = new class extends Checker {
+            public static function mask(string $message, string $connection): string
+            {
+                return self::maskPassword($message, $connection);
+            }
+        };
+
+        $this->assertSame($expected, $checker::mask($message, $connection));
     }
 
     /**

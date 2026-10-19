@@ -16,6 +16,9 @@ class Checker
 {
     public const OK = 'OK';
 
+    /** Shortest password replaced literally in a message; see maskPassword() */
+    public const MASK_MIN_LENGTH = 4;
+
     /** @var array{0: string, 1: string}|null */
     protected ?array $databaseStatus = null;
 
@@ -80,13 +83,19 @@ class Checker
         return trim((string) preg_replace('/\s+/', ' ', $message));
     }
 
+    /**
+     * Masks the connection password in an error message. A password inside a URL
+     * (`://user:pw@`, `://:pw@`) is always masked. Elsewhere the password is replaced literally only when
+     * it has at least MASK_MIN_LENGTH characters: a short one such as "0" would replace every
+     * match in the message (`127.0.0.1` would become `127.****.****.1`).
+     */
     protected static function maskPassword(string $message, string $connection): string
     {
-        $password = $connection === '' ? '' : (new Uri($connection))->getPassword();
-        if (!empty($password)) {
+        $password = $connection === '' ? null : (new Uri($connection))->getPassword();
+        if ($password !== null && strlen($password) >= self::MASK_MIN_LENGTH) {
             $message = str_replace([$password, rawurlencode($password)], '****', $message);
         }
 
-        return (string) preg_replace('~://([^:/@\s]+):[^@\s]+@~', '://$1:****@', $message);
+        return (string) preg_replace('~://([^:/@\s]*):[^@\s]+@~', '://$1:****@', $message);
     }
 }

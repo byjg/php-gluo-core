@@ -169,6 +169,13 @@
   already used, and the scheme of `DBDRIVER_CONNECTION` picks one. `getDatabaseClass()` returns
   `null` by default; a project that overrides it keeps its class.
 
+- `./gluo list --check` masks the database password in a `DB_UNREACHABLE` message with a
+  literal replace, which corrupted the message when the password was short: a password `200`
+  turned `SQLSTATE[HY000] [2002]` into `SQLSTATE[HY000] [****2]`. The literal replace now needs a password of
+  at least `Checker::MASK_MIN_LENGTH` (4) characters; a password inside a URL (`://user:pw@`)
+  is masked whatever its length, including `"0"` and a password-only URL (`://:pw@`), which
+  was left unmasked before.
+
 ## Requirements
 
 - PHP 8.3, 8.4, 8.5 and 8.6 are now supported: `"php": ">=8.3 <8.7"`.
