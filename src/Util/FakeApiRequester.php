@@ -14,7 +14,6 @@ use ByJG\RestServer\Exception\Error422Exception;
 use ByJG\RestServer\Exception\Error520Exception;
 use ByJG\RestServer\Exception\OperationIdInvalidException;
 use ByJG\RestServer\Middleware\JwtMiddleware;
-use ByJG\RestServer\MockRequestHandler;
 use ByJG\RestServer\MockServer;
 use ByJG\RestServer\Route\OpenApiRouteList;
 use ByJG\WebRequest\Exception\MessageException;
@@ -54,6 +53,16 @@ class FakeApiRequester extends AbstractRequester
     {
         $logger = Config::has(LoggerInterface::class) ? Config::get(LoggerInterface::class) : new NullLogger();
         $mock = new MockServer($logger);
+
+        // This harness builds its own server, so it does not inherit anything configured
+        // on the application's Server binding. Without this, a controller that declares
+        // constructor dependencies would work in production and fail only under test.
+        //
+        // Lenient on purpose: a project part-way through registering its controllers must
+        // still be able to run its tests. Controllers that do declare dependencies still
+        // fail loudly here, because the fallback `new` cannot satisfy them.
+        $mock->withContainer(Config::getContainer(), allowUnregistered: true);
+
         if (Config::has(JwtMiddleware::class)) {
             $mock->withMiddleware(Config::get(JwtMiddleware::class));
         }

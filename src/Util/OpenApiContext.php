@@ -8,6 +8,7 @@ use ByJG\Config\Exception\ConfigException;
 use ByJG\Config\Exception\ConfigNotFoundException;
 use ByJG\Config\Exception\DependencyInjectionException;
 use ByJG\Config\Exception\KeyNotFoundException;
+use ByJG\Config\Exception\RunTimeException;
 use ByJG\RestServer\Exception\Error400Exception;
 use ByJG\RestServer\HttpRequest;
 use ByJG\Serializer\Serialize;
@@ -25,24 +26,29 @@ class OpenApiContext
     /**
      * Validates request against OpenAPI schema and returns parsed payload.
      *
+     * @param HttpRequest $request
+     * @param bool $preserveNullValues
+     * @param Schema|null $schema
      * @return array|XmlDocument Returns XmlDocument for XML content, array for JSON/form data
      * @throws ConfigException
-     * @throws ConfigNotFoundException
+     * @throws ContainerExceptionInterface
      * @throws DependencyInjectionException
      * @throws Error400Exception
+     * @throws FileException
      * @throws InvalidArgumentException
      * @throws KeyNotFoundException
+     * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      * @throws XmlUtilException
-     * @throws FileException
-     * @throws ContainerExceptionInterface
-     * @throws NotFoundExceptionInterface
+     * @throws RunTimeException
      */
     public static function validateRequest(HttpRequest $request, bool $preserveNullValues = false, ?Schema $schema = null): array|XmlDocument
     {
         $schema = $schema ?? Config::get(Schema::class);
 
-        $path = $request->getRequestPath();
+        // A request with no parsable path matches no schema path; '' lets the lookup
+        // below fail and surface as the same 400 as any other unknown route.
+        $path = $request->getRequestPath() ?? '';
         $method = $request->serverString('REQUEST_METHOD') ?? 'GET';
         $contentTypeHeader = $request->getHeader('Content-Type') ?? '';
         $contentType = is_string($contentTypeHeader) ? strtolower($contentTypeHeader) : '';

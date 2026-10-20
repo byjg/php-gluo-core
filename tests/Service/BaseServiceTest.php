@@ -1,14 +1,14 @@
 <?php
 
-namespace ByJGTest\Gluo\Service;
+namespace Tests\Service;
 
 use ByJG\AnyDataset\Db\DatabaseExecutor;
 use ByJG\AnyDataset\Db\Factory;
 use ByJG\RestServer\Exception\Error404Exception;
 use ByJG\RestServer\Exception\Error422Exception;
-use ByJGTest\Gluo\Fixture\Product;
-use ByJGTest\Gluo\Fixture\ProductRepository;
-use ByJGTest\Gluo\Fixture\ProductService;
+use Tests\Fixture\Product;
+use Tests\Fixture\ProductRepository;
+use Tests\Fixture\ProductService;
 use PHPUnit\Framework\TestCase;
 
 class BaseServiceTest extends TestCase
@@ -102,6 +102,20 @@ class BaseServiceTest extends TestCase
 
         $this->assertCount(20, $this->service->list(null, null));
         $this->assertCount(5, $this->service->list(1, 20));
+    }
+
+    public function testListPassesOrderByToTheRepository(): void
+    {
+        foreach (['Banana' => 2.0, 'Apple' => 1.0, 'Cherry' => 3.0] as $name => $price) {
+            $this->service->create(['name' => $name, 'price' => $price]);
+        }
+
+        $names = fn (array $models) => array_map(fn ($model) => $model->getName(), $models);
+
+        $this->assertSame(['Apple', 'Banana', 'Cherry'], $names($this->service->list(0, 10, ['name'])));
+        $this->assertSame(['Cherry', 'Banana', 'Apple'], $names($this->service->list(0, 10, ['price DESC'])));
+        // Without it the rows come back in insertion order, as before.
+        $this->assertSame(['Banana', 'Apple', 'Cherry'], $names($this->service->list(0, 10)));
     }
 
     public function testDeleteRemovesRow(): void

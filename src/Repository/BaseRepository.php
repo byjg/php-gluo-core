@@ -5,11 +5,6 @@ namespace ByJG\Gluo\Repository;
 use ByJG\AnyDataset\Core\Exception\DatabaseException;
 use ByJG\AnyDataset\Db\DatabaseExecutor;
 use ByJG\AnyDataset\Db\Exception\DbDriverNotConnected;
-use ByJG\Config\Config;
-use ByJG\Config\Exception\ConfigException;
-use ByJG\Config\Exception\DependencyInjectionException;
-use ByJG\Config\Exception\KeyNotFoundException;
-use ByJG\Config\Exception\RunTimeException;
 use ByJG\MicroOrm\Exception\OrmBeforeInvalidException;
 use ByJG\MicroOrm\Exception\OrmInvalidFieldsException;
 use ByJG\MicroOrm\Exception\RepositoryReadOnlyException;
@@ -24,9 +19,6 @@ use ByJG\MicroOrm\Repository;
 use ByJG\Serializer\Exception\InvalidArgumentException;
 use ByJG\XmlUtil\Exception\FileException;
 use ByJG\XmlUtil\Exception\XmlUtilException;
-use Psr\Container\ContainerExceptionInterface;
-use Psr\Container\NotFoundExceptionInterface;
-use ReflectionException;
 
 abstract class BaseRepository
 {
@@ -157,19 +149,20 @@ abstract class BaseRepository
     }
 
     /**
-     * @throws ConfigException
-     * @throws ContainerExceptionInterface
-     * @throws DependencyInjectionException
-     * @throws KeyNotFoundException
-     * @throws NotFoundExceptionInterface
-     * @throws ReflectionException
-     * @throws RunTimeException
+     * A random (version 4) UUID, formatted as XXXXXXXX-XXXX-4XXX-YXXX-XXXXXXXXXXXX.
+     *
+     * Generated in PHP, so it works on every database driver and needs no connection.
+     *
      * @throws \ByJG\MicroOrm\Exception\InvalidArgumentException
-     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws \Random\RandomException
      */
     public static function getUuid(): string|null
     {
-        return HexUuidLiteral::getFormattedUuid(Config::get(DatabaseExecutor::class)->getScalar("SELECT upper(uuid())"));
+        $bytes = random_bytes(16);
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);   // version 4
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);   // RFC 4122 variant
+
+        return HexUuidLiteral::getFormattedUuid($bytes);
     }
 
     /**

@@ -1,6 +1,6 @@
 <?php
 
-namespace ByJGTest\Gluo\Fixture;
+namespace Tests\Fixture;
 
 use ByJG\Gluo\Service\BaseService;
 
