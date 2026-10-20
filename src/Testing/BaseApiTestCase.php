@@ -65,7 +65,7 @@ abstract class BaseApiTestCase extends TestCase
 
     public function getPsr7Request(): Request
     {
-        $uri = Uri::getInstanceFromString()
+        $uri = Uri::getInstance()
             ->withScheme(Config::get("API_SCHEMA"))
             ->withHost(Config::get("API_SERVER"));
 
