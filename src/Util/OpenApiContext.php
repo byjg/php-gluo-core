@@ -50,8 +50,7 @@ class OpenApiContext
         // below fail and surface as the same 400 as any other unknown route.
         $path = $request->getRequestPath() ?? '';
         $method = $request->serverString('REQUEST_METHOD') ?? 'GET';
-        $contentTypeHeader = $request->getHeader('Content-Type') ?? '';
-        $contentType = is_string($contentTypeHeader) ? strtolower($contentTypeHeader) : '';
+        $contentType = strtolower($request->headerString('Content-Type') ?? '');
 
         if (str_contains($contentType, 'xml')) {
             $xmlDoc = new XmlDocument($request->payload());
