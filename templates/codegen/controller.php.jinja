@@ -192,7 +192,7 @@ class {{ className }}Controller
     )]
     #[OA\Response(
         response: 200,
-        description: "The object rto be created",
+        description: "The created object",
         content: new OA\JsonContent(
             required: [ "{{ primaryKeys | join('", "') }}" ],
             properties: [
