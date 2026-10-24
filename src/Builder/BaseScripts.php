@@ -30,7 +30,7 @@ use ReflectionException;
 abstract class BaseScripts
 {
     /**
-     * The migration database classes ./gluo and the API tests register. Migration picks the
+     * The migration database classes the gluo script and the API tests register. Migration picks the
      * one matching the scheme of DBDRIVER_CONNECTION (mysql://, pgsql:// or postgres://, sqlite://).
      */
     public const MIGRATION_DATABASES = [MySqlDatabase::class, PgsqlDatabase::class, SqliteDatabase::class];
@@ -242,8 +242,8 @@ abstract class BaseScripts
     public function getMigrateHelp(): string
     {
         return "Usage:\n" .
-            "  APP_ENV=<environment> ./gluo migrate:<command> [options]\n" .
-            "  ./gluo --env=<environment> migrate:<command> [options]\n\n" .
+            "  APP_ENV=<environment> php gluo migrate:<command> [options]\n" .
+            "  php gluo --env=<environment> migrate:<command> [options]\n\n" .
             $this->getEnvironmentHelpText() .
             "Available Commands:\n" .
             "  migrate:version       Show current database version (alias: migrate:status)\n" .
@@ -258,9 +258,9 @@ abstract class BaseScripts
             "  --no-transaction      Disable transaction support\n" .
             "  -v, -vv, -vvv         Increase verbosity\n\n" .
             "Examples:\n" .
-            "  APP_ENV=dev ./gluo migrate:version\n" .
-            "  ./gluo --env=dev migrate:reset --version=5\n" .
-            "  ./gluo --env=dev migrate:up -vv\n\n" .
+            "  APP_ENV=dev php gluo migrate:version\n" .
+            "  php gluo --env=dev migrate:reset --version=5\n" .
+            "  php gluo --env=dev migrate:up -vv\n\n" .
             "The composer script is an alias: composer migrate -- --env=dev update\n";
     }
 
@@ -269,6 +269,26 @@ abstract class BaseScripts
         return "Environment:\n" .
             "  --env=<environment>   Environment (dev, test, prod) - overrides APP_ENV\n" .
             "  APP_ENV               Environment variable (used if --env not specified)\n\n";
+    }
+
+    // --- Tests ---
+
+    /**
+     * Run PHPUnit with the PHP binary running this script, passing the arguments
+     * through, and return its exit code.
+     *
+     * @param string[] $arguments
+     */
+    public function runTest(array $arguments): int
+    {
+        $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($this->workdir . '/vendor/bin/phpunit');
+        foreach ($arguments as $argument) {
+            $command .= ' ' . escapeshellarg($argument);
+        }
+
+        passthru($command, $exitCode);
+
+        return $exitCode;
     }
 
     // --- OpenAPI ---
@@ -615,8 +635,8 @@ abstract class BaseScripts
     public function getCodeGeneratorHelp(): string
     {
         return "Usage:\n" .
-            "  APP_ENV=<environment> ./gluo codegen:<component> --table=<table_name> [options]\n" .
-            "  ./gluo --env=<environment> codegen:<component> --table=<table_name> [options]\n\n" .
+            "  APP_ENV=<environment> php gluo codegen:<component> --table=<table_name> [options]\n" .
+            "  php gluo --env=<environment> codegen:<component> --table=<table_name> [options]\n\n" .
             "Required:\n" .
             "  --table=<name>        Database table name\n\n" .
             $this->getEnvironmentHelpText() .
@@ -632,10 +652,10 @@ abstract class BaseScripts
             "  --save                Save generated files to disk\n" .
             "  --debug               Show debug information\n\n" .
             "Examples:\n" .
-            "  ./gluo --env=dev codegen:all --table=product --save\n" .
-            "  ./gluo --env=dev codegen:model --table=product --activerecord\n\n" .
+            "  php gluo --env=dev codegen:all --table=product --save\n" .
+            "  php gluo --env=dev codegen:model --table=product --activerecord\n\n" .
             "Several components in one run, and the composer script alias:\n" .
-            "  ./gluo --env=dev codegen --table=product model controller --save\n" .
+            "  php gluo --env=dev codegen --table=product model controller --save\n" .
             "  composer codegen -- --env=dev --table=product all --save\n";
     }
 

@@ -8,7 +8,7 @@ use ByJG\Util\Uri;
 use Throwable;
 
 /**
- * The built-in rows of `./gluo list --check`: what each built-in needs, the database for
+ * The built-in rows of `php gluo list --check`: what each built-in needs, the database for
  * migrate:* and codegen:*, opened once per run. The project rows are Scriptify's
  * Launcher::check().
  */

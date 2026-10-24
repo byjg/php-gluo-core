@@ -32,39 +32,40 @@
 
 ## New Features
 
-- `ByJG\Gluo\Console\Launcher`: the `./gluo` command line entry point.
+- `ByJG\Gluo\Console\Launcher`: the `php gluo` command line entry point.
 
   Built-in commands replace the Composer scripts and run through the project's
   `Builder\Scripts`, so project overrides still apply:
 
   | Command | Was |
   |---|---|
-  | `./gluo migrate:update` (`create`, `version`, `reset`, `up`, `down`) | `composer migrate -- update` |
-  | `./gluo codegen:all --table=x` (`model`, `repository`, `service`, `controller`, `test`) | `composer codegen -- --table=x all` |
-  | `./gluo openapi`, `./gluo openapi:check` | `composer openapi`, `composer openapi:check` |
-  | `./gluo terminal` | `composer terminal` |
+  | `php gluo migrate:update` (`create`, `version`, `reset`, `up`, `down`) | `composer migrate -- update` |
+  | `php gluo codegen:all --table=x` (`model`, `repository`, `service`, `controller`, `test`) | `composer codegen -- --table=x all` |
+  | `php gluo openapi`, `php gluo openapi:check` | `composer openapi`, `composer openapi:check` |
+  | `php gluo terminal` | `composer terminal` |
+  | `php gluo test` (`openapi:check`, then PHPUnit with the arguments passed through) | `composer test` |
 
   Project commands come from a `ByJG\Scriptify\CommandProvider` class of the project,
-  which the `./gluo` script passes to the launcher:
+  which the `gluo` script passes to the launcher:
   `new Launcher(__DIR__, new \App\Command\Commands())`. Its `commands()` maps a name to a
   target with class references: `'user:cleanup' => Maintenance::class . '::cleanOldRecords'`,
   or a class for every public method it declares, in kebab-case
   (`'payment' => PaymentCommands::class` gives `payment:create`, `payment:clean-old-records`,
   ...). A typo fails in the IDE and in Psalm, and a rename is refactor-safe. Arguments are
-  positional and map to the method parameters; `./gluo user:cleanup --help` prints the
-  method's PHPDoc, and `./gluo list` its first line.
+  positional and map to the method parameters; `php gluo user:cleanup --help` prints the
+  method's PHPDoc, and `php gluo list` its first line.
 
   The registry, the class expansion, the name rules, the help and the project rows of
   `list --check` are Scriptify's `Launcher`; `ByJG\Gluo\Console\Launcher` extends it with
   the built-ins, `--env` and the database rows, and reserves the built-in names. The class
   of a project command is built by the Gluo container (`Config::getContainer()`), only when
-  a project command runs or `list --check` asks `has()`: `./gluo list` and the built-ins
+  a project command runs or `list --check` asks `has()`: `php gluo list` and the built-ins
   never build it.
 
-- `./gluo --env=<env> install [--template=systemd|crond|upstart|initd] <command> [args...]`
-  installs a project command as a system service, and `./gluo uninstall <command>` removes
-  it. The service runs `./gluo` itself, so the Gluo container is built when it starts, and
-  its command line is written in full: the PHP binary, the absolute path to `./gluo`,
+- `php gluo --env=<env> install [--template=systemd|crond|upstart|initd] <command> [args...]`
+  installs a project command as a system service, and `php gluo uninstall <command>` removes
+  it. The service runs `php gluo` itself, so the Gluo container is built when it starts, and
+  its command line is written in full: the PHP binary, the absolute path to `php gluo`,
   `--env`, the command and its arguments, in the project root. The command must pass
   `list --check`. The service is named after the project directory and the command
   (`shop-payment-sweep`), or `--name`; `--description` sets its description. Scriptify's
@@ -73,16 +74,16 @@
   `--env=<env>` (also `--env <env>` and `-e <env>`, before or after the command) is
   consumed by the launcher and exported as `APP_ENV` before Config is initialised.
 
-  `./gluo list` shows both groups; `./gluo list --check` adds a status per command
+  `php gluo list` shows both groups; `php gluo list --check` adds a status per command
   (environment, configuration and database connectivity for the built-ins; name, target,
   visibility and container registration for project commands, without building them) and
   exits 1 if any is not `OK`.
 
-  `./gluo migrate <sub>` and `./gluo codegen <components>` without the colon are accepted
+  `php gluo migrate <sub>` and `php gluo codegen <components>` without the colon are accepted
   so the Composer scripts can stay as aliases.
 
 - `BaseScripts::getMigrateHelp()` and `getCodeGeneratorHelp()` are now public, and their
-  text uses the `./gluo` syntax.
+  text uses the `php gluo` syntax.
 
 - `BaseLoginController::getResetEmailSubject()` sets the subject of the password reset
   email, next to the existing `getResetEmailTemplate()` hook. The subject used to be
@@ -165,11 +166,11 @@
 - `BaseApiTestCase` reset the test database with `MySqlDatabase` unless `getDatabaseClass()` was
   overridden, so the tests of a PostgreSQL or SQLite project failed with
   `Scheme "sqlite" does not found`. It now registers every class of the new
-  `BaseScripts::MIGRATION_DATABASES` (MySQL, PostgreSQL, SQLite), the list `./gluo migrate`
+  `BaseScripts::MIGRATION_DATABASES` (MySQL, PostgreSQL, SQLite), the list `php gluo migrate`
   already used, and the scheme of `DBDRIVER_CONNECTION` picks one. `getDatabaseClass()` returns
   `null` by default; a project that overrides it keeps its class.
 
-- `./gluo list --check` masks the database password in a `DB_UNREACHABLE` message with a
+- `php gluo list --check` masks the database password in a `DB_UNREACHABLE` message with a
   literal replace, which corrupted the message when the password was short: a password `200`
   turned `SQLSTATE[HY000] [2002]` into `SQLSTATE[HY000] [****2]`. The literal replace now needs a password of
   at least `Checker::MASK_MIN_LENGTH` (4) characters; a password inside a URL (`://user:pw@`)
