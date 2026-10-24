@@ -67,7 +67,7 @@ abstract class LauncherTestCase extends TestCase
     }
 
     /**
-     * Run `./gluo <arguments>` and return [exit code, stdout, stderr].
+     * Run `php gluo <arguments>` and return [exit code, stdout, stderr].
      *
      * @return array{0: int, 1: string, 2: string}
      */
@@ -78,7 +78,7 @@ abstract class LauncherTestCase extends TestCase
 
         ob_start();
         try {
-            $exitCode = (new Launcher($this->rootDir, new ArrayCommands($this->commands), $this->scripts, $this->stdErr, $this->container))->run(['./gluo', ...$arguments]);
+            $exitCode = (new Launcher($this->rootDir, new ArrayCommands($this->commands), $this->scripts, $this->stdErr, $this->container))->run(['gluo', ...$arguments]);
         } finally {
             $stdOut = (string) ob_get_clean();
         }

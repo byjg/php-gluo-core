@@ -33,9 +33,9 @@ and framework improvements arrive with a plain `composer update`.
 - **Attributes** — `RequireAuthenticated`, `RequireRole`, `ValidateRequest`
 - **Utilities** — `JwtContext`, `OpenApiContext`, `FakeApiRequester`, `OrderBy`
 - **Builder** — `BaseScripts`: database migration entry points, OpenAPI generation, and the
-  code generator (`./gluo codegen:*`) with its Jinja templates
-- **Console** — `Launcher`, the `./gluo` command line (built-in and project commands), and
-  `Checker`, the built-in rows of `./gluo list --check`
+  code generator (`php gluo codegen:*`) with its Jinja templates
+- **Console** — `Launcher`, the `php gluo` command line (built-in and project commands), and
+  `Checker`, the built-in rows of `php gluo list --check`
 - **Test harness** — `BaseApiTestCase` for contract-testing your REST endpoints
   against the OpenAPI definition
 - **Traits** — `OaCreatedAt`, `OaUpdatedAt`, `OaDeletedAt`

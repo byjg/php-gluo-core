@@ -15,11 +15,11 @@ use Symfony\Component\Console\Input\ArrayInput;
 use Throwable;
 
 /**
- * The `./gluo` command line entry point.
+ * The `php gluo` command line entry point.
  *
- * Project commands come from the project's CommandProvider, which the ./gluo script passes
+ * Project commands come from the project's CommandProvider, which the gluo script passes
  * in, and run through Scriptify's Launcher with the Gluo container. The built-in commands
- * (migrate:*, codegen:*, openapi, terminal, install, uninstall) run through the project's
+ * (migrate:*, codegen:*, openapi, terminal, test, install, uninstall) run through the project's
  * Builder\Scripts, and the provider cannot take their names.
  */
 class Launcher extends ScriptifyLauncher
@@ -42,6 +42,7 @@ class Launcher extends ScriptifyLauncher
         'openapi' => 'Generate the OpenAPI spec from the controller attributes',
         'openapi:check' => 'Warn when the OpenAPI spec is older than its sources',
         'terminal' => 'Open an interactive PHP terminal',
+        'test' => 'Run the test suite (warns first when the OpenAPI spec is stale)',
         'uninstall' => 'Remove a service created by install',
     ];
 
@@ -54,7 +55,7 @@ class Launcher extends ScriptifyLauncher
 
     /**
      * Group names accepted without the colon, for the composer script aliases:
-     * `composer migrate -- update` runs `./gluo migrate update`.
+     * `composer migrate -- update` runs `php gluo migrate update`.
      */
     public const COMPATIBILITY_FORMS = ['codegen', 'migrate'];
 
@@ -127,7 +128,7 @@ class Launcher extends ScriptifyLauncher
     #[\Override]
     protected function scriptName(): string
     {
-        return './' . self::SCRIPT;
+        return 'php ' . self::SCRIPT;
     }
 
     /**
@@ -237,12 +238,12 @@ class Launcher extends ScriptifyLauncher
                 return 0;
 
             case 'openapi:check':
-                $scripts = $this->getScripts();
-                if (!method_exists($scripts, 'runCheckOpenApi')) {
-                    throw new Exception(get_class($scripts) . ' does not implement runCheckOpenApi().');
-                }
-                $scripts->runCheckOpenApi();
+                $this->checkOpenApi();
                 return 0;
+
+            case 'test':
+                $this->checkOpenApi();
+                return $this->getScripts()->runTest($arguments);
 
             // Compatibility form for the `composer codegen -- --table=x all` alias:
             // the components are in the arguments, as runCodeGenerator() takes them.
@@ -262,10 +263,25 @@ class Launcher extends ScriptifyLauncher
     }
 
     /**
-     * `./gluo --env=<env> install [--template=<t>] [--name=<service>] [--description=<d>] <command> [args...]`
+     * Warn when the OpenAPI spec is older than its sources. The check lives in the
+     * project's Scripts, because the project decides which sources the spec comes from.
      *
-     * The service runs ./gluo itself, so the Gluo container is built when it starts. Its
-     * command line is written in full: the PHP binary, the absolute path to ./gluo, the
+     * @throws Exception
+     */
+    protected function checkOpenApi(): void
+    {
+        $scripts = $this->getScripts();
+        if (!method_exists($scripts, 'runCheckOpenApi')) {
+            throw new Exception(get_class($scripts) . ' does not implement runCheckOpenApi().');
+        }
+        $scripts->runCheckOpenApi();
+    }
+
+    /**
+     * `php gluo --env=<env> install [--template=<t>] [--name=<service>] [--description=<d>] <command> [args...]`
+     *
+     * The service runs the gluo script itself, so the Gluo container is built when it starts. Its
+     * command line is written in full: the PHP binary, the absolute path to the gluo script, the
      * environment, the command and its arguments, in the project root.
      *
      * @param string[] $arguments
@@ -274,15 +290,15 @@ class Launcher extends ScriptifyLauncher
     protected function install(array $arguments): int
     {
         [$options, $arguments] = $this->serviceOptions($arguments, ['template', 'name', 'description']);
-        $name = array_shift($arguments) ?? throw new Exception('Which command? Usage: ./gluo --env=<env> install [--template=systemd] <command> [args...]');
+        $name = array_shift($arguments) ?? throw new Exception('Which command? Usage: php gluo --env=<env> install [--template=systemd] <command> [args...]');
 
         $env = (string) getenv('APP_ENV');
         if ($env === '') {
-            throw new Exception('The service needs an environment: ./gluo --env=<env> install ' . $name);
+            throw new Exception('The service needs an environment: php gluo --env=<env> install ' . $name);
         }
         $status = $this->check()[$name] ?? null;
         if ($status === null) {
-            throw new Exception("Command \"$name\" is not defined. Run ./gluo list to see the available commands.");
+            throw new Exception("Command \"$name\" is not defined. Run php gluo list to see the available commands.");
         }
         if ($status[0] !== self::OK) {
             throw new Exception("Cannot install \"$name\": {$status[0]} {$status[1]}");
@@ -303,7 +319,7 @@ class Launcher extends ScriptifyLauncher
     }
 
     /**
-     * `./gluo uninstall [--name=<service>] <command>`
+     * `php gluo uninstall [--name=<service>] <command>`
      *
      * @param string[] $arguments
      * @throws Throwable
@@ -312,7 +328,7 @@ class Launcher extends ScriptifyLauncher
     {
         [$options, $arguments] = $this->serviceOptions($arguments, ['name']);
         $service = $options['name'] ?? $this->serviceName(
-            array_shift($arguments) ?? throw new Exception('Which command? Usage: ./gluo uninstall <command>')
+            array_shift($arguments) ?? throw new Exception('Which command? Usage: php gluo uninstall <command>')
         );
 
         Scriptify::uninstall($service);
@@ -395,9 +411,9 @@ class Launcher extends ScriptifyLauncher
         }
 
         $usage = match ($command) {
-            'install' => './gluo --env=<env> install [--template=systemd|crond|upstart|initd] [--name=<service>] [--description=<text>] <command> [args...]',
-            'uninstall' => './gluo uninstall [--name=<service>] <command>',
-            default => "./gluo $command",
+            'install' => 'php gluo --env=<env> install [--template=systemd|crond|upstart|initd] [--name=<service>] [--description=<text>] <command> [args...]',
+            'uninstall' => 'php gluo uninstall [--name=<service>] <command>',
+            default => "php gluo $command",
         };
 
         return self::BUILT_IN[$command] . ".\n\nUsage:\n  $usage\n";
@@ -406,7 +422,7 @@ class Launcher extends ScriptifyLauncher
     #[\Override]
     protected function usage(): string
     {
-        return "Usage:\n  ./gluo [--env=<env>] <command> [args...]\n  ./gluo <command> --help\n  ./gluo list [--check]\n";
+        return "Usage:\n  php gluo [--env=<env>] <command> [args...]\n  php gluo <command> --help\n  php gluo list [--check]\n";
     }
 
     #[\Override]

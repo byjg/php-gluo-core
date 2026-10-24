@@ -73,6 +73,20 @@ class LauncherTest extends LauncherTestCase
         $this->assertSame([[$method, $expectedArguments, false]], $this->scripts->calls);
     }
 
+    public function testTestChecksTheSpecThenRunsPhpUnitAndReturnsItsExitCode(): void
+    {
+        $this->scripts->testExitCode = 3;
+
+        [$exitCode, , $stdErr] = $this->gluo('test', '--filter=UserTest');
+
+        $this->assertSame('', $stdErr);
+        $this->assertSame(3, $exitCode);
+        $this->assertSame([
+            ['runCheckOpenApi', [], false],
+            ['runTest', ['--filter=UserTest'], false],
+        ], $this->scripts->calls);
+    }
+
     public static function envProvider(): array
     {
         return [
@@ -136,7 +150,7 @@ class LauncherTest extends LauncherTestCase
 
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('Command is required.', $stdErr);
-        $this->assertStringContainsString('./gluo migrate:<command>', $stdErr);
+        $this->assertStringContainsString('php gluo migrate:<command>', $stdErr);
     }
 
     public function testProjectCommandRunsThroughTheContainerWithPositionalArguments(): void
@@ -180,7 +194,7 @@ class LauncherTest extends LauncherTestCase
         $this->assertSame(0, $exitCode);
         $this->assertSame(
             "Delete records older than the given number of days.\n\n@param int \$days\n@param string|null \$table\n"
-            . "\nUsage: \n./gluo user:cleanup <days> [table] \n",
+            . "\nUsage: \nphp gluo user:cleanup <days> [table] \n",
             $stdOut
         );
     }
@@ -189,17 +203,17 @@ class LauncherTest extends LauncherTestCase
     {
         [$exitCode, $stdOut] = $this->gluo('migrate:reset', '--help');
         $this->assertSame(0, $exitCode);
-        $this->assertStringContainsString('./gluo --env=<environment> migrate:<command> [options]', $stdOut);
+        $this->assertStringContainsString('php gluo --env=<environment> migrate:<command> [options]', $stdOut);
 
         foreach (['codegen:all', 'codegen:repo', 'codegen'] as $command) {
             [$exitCode, $stdOut] = $this->gluo($command, '--help');
             $this->assertSame(0, $exitCode);
-            $this->assertStringContainsString('./gluo --env=<environment> codegen:<component> --table=<table_name>', $stdOut);
+            $this->assertStringContainsString('php gluo --env=<environment> codegen:<component> --table=<table_name>', $stdOut);
         }
 
         [$exitCode, $stdOut] = $this->gluo('openapi', '--help');
         $this->assertSame(0, $exitCode);
-        $this->assertStringContainsString("Usage:\n  ./gluo openapi\n", $stdOut);
+        $this->assertStringContainsString("Usage:\n  php gluo openapi\n", $stdOut);
 
         $this->assertSame([], $this->scripts->calls);
     }

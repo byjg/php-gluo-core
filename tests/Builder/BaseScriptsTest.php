@@ -66,6 +66,21 @@ class BaseScriptsTest extends TestCase
         return $configFile;
     }
 
+    public function testRunTestRunsPhpUnitWithTheArgumentsAndReturnsItsExitCode(): void
+    {
+        $dir = $this->makeTempDir();
+        mkdir($dir . '/vendor/bin', 0755, true);
+        file_put_contents($dir . '/vendor/bin/phpunit', "<?php\necho json_encode(array_slice(\$argv, 1));\nexit(3);\n");
+        $this->scripts->setWorkdir($dir);
+
+        ob_start();
+        $exitCode = $this->scripts->runTest(['--filter=a b', '--testdox']);
+        $output = ob_get_clean();
+
+        $this->assertSame(3, $exitCode);
+        $this->assertSame('["--filter=a b","--testdox"]', $output);
+    }
+
     public function testDefaultAppNamespace(): void
     {
         $this->assertSame('App', $this->scripts->callGetAppNamespace());

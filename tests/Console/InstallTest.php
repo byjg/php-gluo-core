@@ -6,7 +6,7 @@ use ByJG\Scriptify\Scriptify;
 use ByJG\Scriptify\ServiceWriter;
 
 /**
- * `./gluo install`: a service that runs ./gluo itself, its command line written in full.
+ * `php gluo install`: a service that runs the gluo script itself, its command line written in full.
  */
 class InstallTest extends LauncherTestCase
 {
@@ -88,7 +88,7 @@ class InstallTest extends LauncherTestCase
         [$exitCode, , $stdErr] = $this->gluo('install', 'payment:sweep');
 
         $this->assertSame(1, $exitCode);
-        $this->assertSame("The service needs an environment: ./gluo --env=<env> install payment:sweep\n", $stdErr);
+        $this->assertSame("The service needs an environment: php gluo --env=<env> install payment:sweep\n", $stdErr);
         $this->assertSame([], $this->written());
     }
 
@@ -123,7 +123,7 @@ class InstallTest extends LauncherTestCase
         [$exitCode, $stdOut] = $this->gluo('install', '--help');
 
         $this->assertSame(0, $exitCode);
-        $this->assertStringContainsString('./gluo --env=<env> install [--template=systemd|crond|upstart|initd] [--name=<service>]', $stdOut);
+        $this->assertStringContainsString('php gluo --env=<env> install [--template=systemd|crond|upstart|initd] [--name=<service>]', $stdOut);
         $this->assertSame([], $this->written());
     }
 }
