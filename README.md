@@ -1,5 +1,6 @@
 ---
 sidebar_key: gluo-core
+sidebar_category: gluo
 tags: [php, http]
 ---
 
