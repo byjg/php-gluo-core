@@ -59,13 +59,7 @@ class {{ className }}Controller
     #[RequireAuthenticated]
     public function get{{ className }}(HttpResponse $response, HttpRequest $request): void
     {
-        $model = {{ className }}::get($request->attribute('id'));
-
-        if (is_null($model)) {
-            throw new Error404Exception("{{ className }} not found");
-        }
-
-        $response->write($model);
+        $response->write({{ className }}::getOrFail($request->attribute('id')));
     }
 
     /**
@@ -255,11 +249,7 @@ class {{ className }}Controller
     #[ValidateRequest]
     public function put{{ className }}(HttpResponse $response, HttpRequest $request): void
     {
-        $model = {{ className }}::get($request->attribute('id'));
-
-        if (is_null($model)) {
-            throw new Error404Exception("{{ className }} not found");
-        }
+        $model = {{ className }}::getOrFail($request->attribute('id'));
 
         // The key comes from the path; the body has only the writable fields
         $model->fill(ValidateRequest::getPayload());

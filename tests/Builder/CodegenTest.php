@@ -449,7 +449,8 @@ class CodegenTest extends TestCase
 
         $model = $this->scripts->callRenderCodegenTemplate('model.php', $data);
         $this->assertValidPhp($model);
-        $this->assertStringContainsString('use ByJG\MicroOrm\Trait\ActiveRecord;', $model);
+        // Gluo's ActiveRecord: MicroOrm's, plus getOrFail()
+        $this->assertStringContainsString('use ByJG\Gluo\Trait\ActiveRecord;', $model);
 
         $rest = $this->scripts->callRenderCodegenTemplate('controlleractiverecord.php', $data);
         $this->assertValidPhp($rest);
@@ -457,7 +458,10 @@ class CodegenTest extends TestCase
         $this->assertStringContainsString('class ProductItemController', $rest);
         $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120, minLength: 1)', $rest);
         $this->assertSame(2, substr_count($rest, 'new OA\Property(property: "name",'));
-        $this->assertStringContainsString("\$model = ProductItem::get(\$request->attribute('id'));\n\n        if (is_null(\$model)) {\n            throw new Error404Exception(\"ProductItem not found\");", $rest);
+        // The lookup answers 404 itself: no null check in the controller
+        $this->assertStringContainsString("\$response->write(ProductItem::getOrFail(\$request->attribute('id')));", $rest);
+        $this->assertStringContainsString("\$model = ProductItem::getOrFail(\$request->attribute('id'));", $rest);
+        $this->assertStringNotContainsString('is_null($model)', $rest);
 
         $this->assertStringContainsString("->orderBy(OrderBy::fromQueryString(\$request->queryString('orderBy'), ProductItem::class))", $rest);
         $this->assertStringContainsString('use ByJG\Gluo\Util\OrderBy;', $rest);

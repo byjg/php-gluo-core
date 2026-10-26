@@ -9,7 +9,7 @@ use ByJG\MicroOrm\Attributes\TableUuidPKAttribute;
 use ByJG\MicroOrm\Literal\LiteralInterface;
 use ByJG\MicroOrm\Literal\HexUuidLiteral;
 {% if activerecord %}use ByJG\MicroOrm\Query;
-use ByJG\MicroOrm\Trait\ActiveRecord;
+use ByJG\Gluo\Trait\ActiveRecord;
 use RuntimeException;
 {% endif %}use ByJG\Gluo\Util\SchemaValidator;
 use OpenApi\Attributes as OA;

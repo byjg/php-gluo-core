@@ -39,8 +39,25 @@
 - `BaseService::update(array $payload)` is now `update(mixed $id, array $payload)`: the record
   is the one `$id` names, as in `getOrFail($id)`, and a key in the payload is ignored instead
   of selecting the record. Before, a payload without the key failed with 422.
+- `BaseService`'s 404 says which model was not found: `"Product not found"`, as the ActiveRecord
+  trait's `getOrFail()` does. It was `"Id not found"`. A client or a test that matches the old
+  message has to change, or pass the message it wants to `getOrFail()`, `update()` or `delete()`.
+- `BaseService::delete($id)` answers 404 when there is no record with that key. It used to succeed
+  without deleting anything, unlike the ActiveRecord controllers, which already looked the
+  record up first.
 
 ## New Features
+
+- `ByJG\Gluo\Trait\ActiveRecord`: MicroOrm's `ActiveRecord` plus `getOrFail($pk, ?string $message = null)`,
+  which returns the record or throws `Error404Exception` (`"<Model> not found"` by default, or the
+  message given). It is the ActiveRecord counterpart of `BaseService::getOrFail()`, like Laravel's
+  `findOrFail()`, so a controller does not write the null check before it shows, changes or
+  deletes a record. codegen uses it in ActiveRecord models, and the generated controllers call
+  `Model::getOrFail($request->attribute('id'))`. An existing model switches by importing
+  `ByJG\Gluo\Trait\ActiveRecord` instead of `ByJG\MicroOrm\Trait\ActiveRecord`.
+- `BaseService::getOrFail()`, `update()` and `delete()` take the message of their 404 as an optional
+  last argument: `getOrFail($id, $message)`, `update($id, $payload, $message)`,
+  `delete($id, $message)`.
 
 - `ByJG\Gluo\Util\SchemaValidator`: a model is validated against its own OpenAPI schema
   every time it is saved, not only when it comes in through an endpoint with

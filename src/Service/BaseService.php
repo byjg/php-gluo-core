@@ -16,6 +16,7 @@ use ByJG\RestServer\Exception\Error422Exception;
 use ByJG\Serializer\ObjectCopy;
 use ByJG\XmlUtil\Exception\FileException;
 use ByJG\XmlUtil\Exception\XmlUtilException;
+use ReflectionClass;
 
 abstract class BaseService
 {
@@ -59,6 +60,7 @@ abstract class BaseService
      *
      * @param mixed $id The key of the record, as in getOrFail()
      * @param array $payload The new values, by property name
+     * @param string|null $message The message of the 404 when there is no such record, as in getOrFail()
      * @throws DatabaseException
      * @throws DbDriverNotConnected
      * @throws Error404Exception
@@ -71,9 +73,9 @@ abstract class BaseService
      * @throws XmlUtilException
      * @throws \Psr\SimpleCache\InvalidArgumentException
      */
-    public function update(mixed $id, array $payload): mixed
+    public function update(mixed $id, array $payload, ?string $message = null): mixed
     {
-        $model = $this->getOrFail($id);
+        $model = $this->getOrFail($id, $message);
 
         // The record is the one $id names: a key in the payload cannot point the update elsewhere
         foreach ($this->baseRepository->getMapper()->getPrimaryKey() as $pkField) {
@@ -99,6 +101,10 @@ abstract class BaseService
     }
 
     /**
+     * The record with this key.
+     *
+     * @param array|string|int|LiteralInterface $id The key; an array for a composite key
+     * @param string|null $message The message of the 404; by default "<Model> not found"
      * @throws DatabaseException
      * @throws DbDriverNotConnected
      * @throws Error404Exception
@@ -108,16 +114,20 @@ abstract class BaseService
      * @throws XmlUtilException
      * @throws \Psr\SimpleCache\InvalidArgumentException
      */
-    public function getOrFail(array|string|int|LiteralInterface $id): mixed
+    public function getOrFail(array|string|int|LiteralInterface $id, ?string $message = null): mixed
     {
         $result = $this->baseRepository->get($id);
         if (empty($result)) {
-            throw new Error404Exception('Id not found');
+            throw new Error404Exception($message ?? $this->notFoundMessage());
         }
         return $result;
     }
 
     /**
+     * @param int|null $page
+     * @param int|null $size
+     * @param string|array|null $orderBy
+     * @return array
      * @throws DatabaseException
      * @throws DbDriverNotConnected
      * @throws FileException
@@ -136,8 +146,28 @@ abstract class BaseService
         $this->baseRepository->save($model);
     }
 
-    public function delete(mixed $id): void
+    /**
+     * Deletes the record $id (a soft delete when the model uses OaDeletedAt).
+     *
+     * @param mixed $id The key of the record, as in getOrFail()
+     * @param string|null $message The message of the 404 when there is no such record
+     * @throws Error404Exception When there is no record with this key
+     */
+    public function delete(mixed $id, ?string $message = null): void
     {
+        // A missing record is a 404, as in getOrFail() and update(), not a silent success
+        $this->getOrFail($id, $message);
         $this->baseRepository->delete($id);
+    }
+
+    /**
+     * The message of the 404 when no message is given: "<Model> not found", as the
+     * ActiveRecord trait's getOrFail() says it.
+     */
+    protected function notFoundMessage(): string
+    {
+        /** @var class-string $class the model the mapper was built from */
+        $class = $this->baseRepository->getMapper()->getEntityClass();
+        return (new ReflectionClass($class))->getShortName() . ' not found';
     }
 }

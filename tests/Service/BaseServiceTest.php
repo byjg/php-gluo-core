@@ -65,6 +65,14 @@ class BaseServiceTest extends TestCase
         $this->service->update(999, ['name' => 'Ghost']);
     }
 
+    public function testUpdateTakesTheMessageOfThe404(): void
+    {
+        $this->expectException(Error404Exception::class);
+        $this->expectExceptionMessage('There is no product 999');
+
+        $this->service->update(999, ['name' => 'Ghost'], 'There is no product 999');
+    }
+
     public function testUpdateChangesOnlyProvidedFields(): void
     {
         $model = $this->service->create(['name' => 'Widget', 'price' => 10.5]);
@@ -89,10 +97,18 @@ class BaseServiceTest extends TestCase
         $this->assertEqualsWithDelta(5.0, $this->service->getOrFail($gadget->getId())->getPrice(), 0.001);
     }
 
-    public function testGetOrFailThrows404(): void
+    public function testGetOrFailTakesTheMessageOfThe404(): void
     {
         $this->expectException(Error404Exception::class);
-        $this->expectExceptionMessage('Id not found');
+        $this->expectExceptionMessage('There is no product 999');
+
+        $this->service->getOrFail(999, 'There is no product 999');
+    }
+
+    public function testGetOrFailThrows404NamingTheModel(): void
+    {
+        $this->expectException(Error404Exception::class);
+        $this->expectExceptionMessage('Product not found');
 
         $this->service->getOrFail(999);
     }
@@ -128,5 +144,21 @@ class BaseServiceTest extends TestCase
         $this->service->delete($model->getId());
 
         $this->assertEmpty($this->service->get($model->getId()));
+    }
+
+    public function testDeleteOfAMissingRecordIs404(): void
+    {
+        $this->expectException(Error404Exception::class);
+        $this->expectExceptionMessage('Product not found');
+
+        $this->service->delete(999);
+    }
+
+    public function testDeleteTakesTheMessageOfThe404(): void
+    {
+        $this->expectException(Error404Exception::class);
+        $this->expectExceptionMessage('There is no product 999');
+
+        $this->service->delete(999, 'There is no product 999');
     }
 }
