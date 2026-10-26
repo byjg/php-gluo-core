@@ -23,6 +23,7 @@ use ByJG\JinjaPhp\Exception\TemplateParseException;
 use ByJG\JinjaPhp\Loader\FileSystemLoader;
 use ByJG\Util\Uri;
 use Exception;
+use OpenApi\Annotations\OpenApi;
 use OpenApi\Generator;
 use Psr\SimpleCache\InvalidArgumentException;
 use ReflectionException;
@@ -63,6 +64,16 @@ abstract class BaseScripts
             $this->workdir . '/src',
             __DIR__ . '/../Trait',
         ];
+    }
+
+    /**
+     * The OpenAPI version openapi.json is written in. 3.1 uses JSON Schema 2020-12: a
+     * nullable property becomes a type union (`"type": ["string", "null"]`), and the routing,
+     * the request validation and the contract tests all read it. Override to keep 3.0.0.
+     */
+    protected function getOpenApiVersion(): string
+    {
+        return OpenApi::VERSION_3_1_0;
     }
 
     /**
@@ -304,7 +315,9 @@ abstract class BaseScripts
             mkdir($dir, 0755, true);
         }
 
-        $generator = (new Generator())->setConfig(["operationId.hash" => false]);
+        $generator = (new Generator())
+            ->setConfig(["operationId.hash" => false])
+            ->setVersion($this->getOpenApiVersion());
         $openapi = $generator->generate($this->getOpenApiScanPaths());
         if (is_null($openapi)) {
             throw new Exception("No OpenAPI annotations found in " . implode(", ", $this->getOpenApiScanPaths()));
@@ -406,6 +419,19 @@ abstract class BaseScripts
     }
 
     /**
+     * A char or text column the client has to fill in: NOT NULL, with no default, and not
+     * a key or a generated column. An empty string there is as good as a missing value.
+     */
+    protected function requiresText(ColumnMetadata $column): bool
+    {
+        return $column->required
+            && $column->default === null
+            && !$column->primaryKey
+            && !$column->generated
+            && preg_match('/char|text/i', $column->dbType) === 1;
+    }
+
+    /**
      * Convert the table metadata into the template data array.
      * Kept separate from runCodeGenerator so it can be tested without a database.
      *
@@ -465,6 +491,9 @@ abstract class BaseScripts
                 'openapi_format' => $openapiFormat,
                 // Declared length of a char/varchar column, emitted as OpenAPI maxLength (0 when not applicable).
                 'openapi_max_length' => $column->phpType == 'string' && str_contains($column->dbType, 'char') ? (int)$column->length : 0,
+                // 1 for a text column the client must fill: NOT NULL with no default. Emitted as OpenAPI
+                // minLength, so an empty string is refused like a missing value (0 when not applicable).
+                'openapi_min_length' => $this->requiresText($column) ? 1 : 0,
             ];
         }
 

@@ -156,7 +156,7 @@ class {{ className }}Controller
             {% if nonNullableFields | count > 0 %}required: [ "{{ nonNullableFields | join('", "')}}" ],{% endif %}
             properties: [
 {% for field in fields -%}{% if field.key != "PRI" && field.extra != 'VIRTUAL GENERATED' && field.property != 'createdAt' && field.property != 'updatedAt' && field.property != 'deletedAt' -%}
-                new OA\Property(property: "{{ field.property }}", type: "{{ field.openapi_type }}", format: "{{ field.openapi_format }}"{% if field.openapi_max_length %}, maxLength: {{ field.openapi_max_length }}{% endif %}{% if field.null == "YES" %}, nullable: true{% endif %}){% if loop.last == false %}, {% endif %}
+                new OA\Property(property: "{{ field.property }}", type: "{{ field.openapi_type }}", format: "{{ field.openapi_format }}"{% if field.null == "YES" %}, nullable: true{% endif %}{% if field.openapi_max_length %}, maxLength: {{ field.openapi_max_length }}{% endif %}{% if field.openapi_min_length %}, minLength: {{ field.openapi_min_length }}{% endif %}){% if loop.last == false %}, {% endif %}
 {% endif %}{% endfor %}
             ]
         )

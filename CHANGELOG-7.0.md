@@ -114,7 +114,24 @@
   the request body of the generated controllers. Templates get the declared length as
   `field.openapi_max_length` (`0` for any other type).
 
+- **OpenAPI 3.1.** `php gluo openapi` writes the spec as OpenAPI 3.1.0 (it was swagger-php's
+  default, 3.0.0). A nullable property is written as a type union
+  (`"type": ["string", "null"]`) instead of `nullable: true`; the attributes in the code do
+  not change. Override `BaseScripts::getOpenApiVersion()` to keep 3.0.0.
+- **codegen: `minLength: 1` for required text.** A `NOT NULL` `char`/`varchar`/`text` column
+  with no default (not a key, not generated) gets `minLength: 1` in the model and in the
+  `POST` body, so an empty string is refused like a missing value, as Laravel's `required`
+  and Symfony's `NotBlank` do. New template variable: `openapi_min_length`.
+- **codegen: a test that reaches the server.** The generated test has
+  `testInvalidPayloadIsRejectedByTheServer`: a `PUT` without the primary key, a `POST`
+  without the required fields and an empty value for each `minLength` column, sent without
+  the OpenAPI spec on the client side so they reach `#[ValidateRequest]`, expecting 400.
+
 ## Bug Fixes
+
+- codegen wrote the `OA\Property` arguments out of the order the attribute declares them
+  (`maxLength` before `nullable`), which IDE inspections flag. It now writes `type`,
+  `format`, `nullable`, `maxLength`, `minLength`.
 
 - The generated list endpoints documented `orderBy` and `filter` query parameters but
   only read `page` and `size`. `orderBy` is now applied, through the new
