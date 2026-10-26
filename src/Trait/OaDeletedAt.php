@@ -10,7 +10,7 @@ trait OaDeletedAt
 {
     use DeletedAt;
 
-    #[OA\Property(type: "string", format: "date-time", nullable: true)]
+    #[OA\Property(type: "string", format: "date-time", readOnly: true, nullable: true)]
     #[FieldAttribute(fieldName: "deleted_at", syncWithDb: false)]
     protected string|null $deletedAt = null;
 }

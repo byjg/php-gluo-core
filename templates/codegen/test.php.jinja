@@ -47,7 +47,7 @@ class {{ className }}Test extends BaseApiTestCase
         $request
             ->withPsr7Request($this->getPsr7Request())
             ->withMethod('GET')
-            ->withPath("/{{ restPath }}/{% if fields.0.type == 'int' %}1"{% else %}" . BaseRepository::getUuid(){% endif %})
+            ->withPath("/{{ restPath }}/{% if fields.0.php_type == 'int' %}1"{% else %}" . BaseRepository::getUuid(){% endif %})
             ->expectStatus(401)
         ;
         $this->sendRequest($request);
@@ -62,7 +62,7 @@ class {{ className }}Test extends BaseApiTestCase
         $request
             ->withPsr7Request($this->getPsr7Request())
             ->withMethod('GET')
-            ->withPath("/{{ restPath }}/{% if fields.0.type == 'int' %}1"{% else %}" . BaseRepository::getUuid(){% endif %})
+            ->withPath("/{{ restPath }}/{% if fields.0.php_type == 'int' %}1"{% else %}" . BaseRepository::getUuid(){% endif %})
             ->expectStatus(401)
         ;
         $this->sendRequest($request);
@@ -93,8 +93,8 @@ class {{ className }}Test extends BaseApiTestCase
         $request
             ->withPsr7Request($this->getPsr7Request())
             ->withMethod('PUT')
-            ->withPath("/{{ restPath }}")
-            ->withRequestBody(json_encode($this->getSampleData(true) + ['{{ fields.0.field }}' => {% if fields.0.type == 'int' %}1{% else %}BaseRepository::getUuid(){% endif %}]))
+            ->withPath("/{{ restPath }}/{% if fields.0.php_type == 'int' %}1"{% else %}" . BaseRepository::getUuid(){% endif %})
+            ->withRequestBody(json_encode($this->getSampleData(true)))
             ->expectStatus(401)
         ;
         $this->sendRequest($request);
@@ -132,8 +132,8 @@ class {{ className }}Test extends BaseApiTestCase
         $request
             ->withPsr7Request($this->getPsr7Request())
             ->withMethod('PUT')
-            ->withPath("/{{ restPath }}")
-            ->withRequestBody(json_encode($this->getSampleData(true) + ['{{ fields.0.field }}' => {% if fields.0.type == 'int' %}1{% else %}BaseRepository::getUuid(){% endif %}]))
+            ->withPath("/{{ restPath }}/{% if fields.0.php_type == 'int' %}1"{% else %}" . BaseRepository::getUuid(){% endif %})
+            ->withRequestBody(json_encode($this->getSampleData(true)))
             ->expectStatus(403)
             ->withRequestHeader([
                 "Authorization" => "Bearer " . $result['token']
@@ -170,14 +170,15 @@ class {{ className }}Test extends BaseApiTestCase
                 "Authorization" => "Bearer " . $result['token']
             ])
         ;
-        $body = $this->sendRequest($request);
+        $this->sendRequest($request);
 
+        // The key is in the path; the body has the same fields as the POST
         $request = new FakeApiRequester();
         $request
             ->withPsr7Request($this->getPsr7Request())
             ->withMethod('PUT')
-            ->withPath("/{{ restPath }}")
-            ->withRequestBody($body->getBody()->getContents())
+            ->withPath("/{{ restPath }}/" . $bodyAr['{{ fields.0.field }}'])
+            ->withRequestBody(json_encode($this->getSampleData(true)))
             ->expectStatus(200)
             ->withRequestHeader([
                 "Authorization" => "Bearer " . $result['token']
@@ -195,19 +196,25 @@ class {{ className }}Test extends BaseApiTestCase
     {
         $result = json_decode($this->sendRequest(Credentials::requestLogin(Credentials::getAdminUser()))->getBody()->getContents(), true);
         $sample = $this->getSampleData(true);
+        $collection = "/{{ restPath }}";
+        $item = "/{{ restPath }}/{% if fields.0.php_type == 'int' %}1"{% else %}" . BaseRepository::getUuid(){% endif %};
 
         $invalid = [
-            'PUT without the primary key' => ['PUT', (object)[]],
-{% if nonNullableFields | count > 0 %}            'POST without the required fields' => ['POST', (object)[]],
-{% endif %}{% for field in fields %}{% if field.openapi_min_length %}            'POST with an empty {{ field.property }}' => ['POST', array_merge($sample, ['{{ field.property }}' => ''])],
+            // The key is generated (POST) or taken from the path (PUT): the body cannot set it
+            'POST with the key in the body' => ['POST', $collection, $sample + ['{{ primaryKeys.0 }}' => {% if fields.0.php_type == 'int' %}1{% else %}BaseRepository::getUuid(){% endif %}]],
+            'PUT with the key in the body' => ['PUT', $item, $sample + ['{{ primaryKeys.0 }}' => {% if fields.0.php_type == 'int' %}1{% else %}BaseRepository::getUuid(){% endif %}]],
+{% if nonNullableFields | count > 0 %}            'POST without the required fields' => ['POST', $collection, (object)[]],
+            'PUT without the required fields' => ['PUT', $item, (object)[]],
+{% endif %}{% for field in fields %}{% if field.openapi_min_length %}            'POST with an empty {{ field.property }}' => ['POST', $collection, array_merge($sample, ['{{ field.property }}' => ''])],
+            'PUT with an empty {{ field.property }}' => ['PUT', $item, array_merge($sample, ['{{ field.property }}' => ''])],
 {% endif %}{% endfor %}        ];
 
-        foreach ($invalid as $case => [$method, $payload]) {
+        foreach ($invalid as $case => [$method, $path, $payload]) {
             $request = new FakeApiRequester();
             $request
                 ->withPsr7Request($this->getPsr7Request())
                 ->withMethod($method)
-                ->withPath("/{{ restPath }}")
+                ->withPath($path)
                 ->withRequestBody(json_encode($payload))
                 ->withRequestHeader([
                     "Authorization" => "Bearer " . $result['token']

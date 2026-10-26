@@ -29,8 +29,39 @@
   `tests/` in its `composer.json`: either rename that namespace to `Tests\` (the `autoload-dev`
   entry and the `namespace`/`use` lines under `tests/`), or adjust the namespace of each newly
   generated test by hand.
+- The generated `PUT` takes the key from the path: `PUT /product/{id}`, as `GET` and `DELETE`
+  already did, instead of `PUT /product` with the key in the body. Its body is the same as the
+  `POST`'s: the writable fields only. A key sent in the body of either is now an unknown
+  property, and the request is answered with 400. To move an existing controller, give its
+  `OA\Put` the path `/{resource}/{id}` and an `OA\Parameter` for `id` (as its `OA\Get` has),
+  use the `OA\RequestBody` of its `OA\Post`, and read the key with `$request->attribute('id')`.
+  The clients change from `PUT /product` to `PUT /product/{id}`.
+- `BaseService::update(array $payload)` is now `update(mixed $id, array $payload)`: the record
+  is the one `$id` names, as in `getOrFail($id)`, and a key in the payload is ignored instead
+  of selecting the record. Before, a payload without the key failed with 422.
 
 ## New Features
+
+- `ByJG\Gluo\Util\SchemaValidator`: a model is validated against its own OpenAPI schema
+  every time it is saved, not only when it comes in through an endpoint with
+  `#[ValidateRequest]`. A command, a queue consumer or a service that saves a model is held to
+  the same rules: the types, lengths, ranges and required fields of its `OA\Property`
+  attributes. It is a MicroOrm validator, declared in the table attribute:
+
+  ```php
+  #[TableAttribute("product", validator: SchemaValidator::class)]
+  ```
+
+  The model is serialized as the API returns it and matched against
+  `#/components/schemas/<Model>` (`byjg/swagger-test`'s `Schema::matchDefinition()`). A
+  `readOnly` property, such as a generated key, is not required, and a null property is
+  treated as not set. A mismatch throws the same 400 as `#[ValidateRequest]`. Writes that do
+  not go through `save()` (`UpdateQuery`, `InsertBulkQuery`, raw SQL) are not validated.
+  codegen declares it on every generated model.
+- codegen marks the generated values `readOnly` in the model's schema: the primary key (an
+  auto-increment column, or a UUID seeded by `TableUuidPKAttribute`) and the virtual
+  columns. `OaCreatedAt`, `OaUpdatedAt` and `OaDeletedAt` mark their dates `readOnly` too.
+  The API returns them and does not take them.
 
 - `ByJG\Gluo\Console\Launcher`: the `php gluo` command line entry point.
 
@@ -128,6 +159,14 @@
   the OpenAPI spec on the client side so they reach `#[ValidateRequest]`, expecting 400.
 
 ## Bug Fixes
+
+- The generated test chose between an integer and a UUID key by the column's database type
+  being exactly `int`, so a key declared `int(11)` got UUID paths (`/product/<uuid>`). It now
+  uses the PHP type of the column.
+
+- The Repository-pattern controller accepted `createdAt`, `updatedAt` and `deletedAt` in the
+  `POST` body, which the ActiveRecord one leaves out: the dates are set by the database and
+  the traits. Both now leave them out.
 
 - codegen wrote the `OA\Property` arguments out of the order the attribute declares them
   (`maxLength` before `nullable`), which IDE inspections flag. It now writes `type`,

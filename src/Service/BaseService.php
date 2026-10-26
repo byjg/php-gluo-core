@@ -55,10 +55,13 @@ abstract class BaseService
     }
 
     /**
+     * Replaces the writable fields of the record $id with the payload, and saves it.
+     *
+     * @param mixed $id The key of the record, as in getOrFail()
+     * @param array $payload The new values, by property name
      * @throws DatabaseException
      * @throws DbDriverNotConnected
      * @throws Error404Exception
-     * @throws Error422Exception
      * @throws FileException
      * @throws InvalidArgumentException
      * @throws OrmBeforeInvalidException
@@ -68,17 +71,14 @@ abstract class BaseService
      * @throws XmlUtilException
      * @throws \Psr\SimpleCache\InvalidArgumentException
      */
-    public function update(array $payload): mixed
+    public function update(mixed $id, array $payload): mixed
     {
-        $primaryKey = $this->baseRepository->getMapper()->getPrimaryKey();
-        $pkValue = array_intersect_key($payload, array_flip($primaryKey));
+        $model = $this->getOrFail($id);
 
-        if (count($pkValue) !== count($primaryKey)) {
-            $pkFieldNames = implode(', ', $primaryKey);
-            throw new Error422Exception("Update requires primary key field(s): {$pkFieldNames}");
+        // The record is the one $id names: a key in the payload cannot point the update elsewhere
+        foreach ($this->baseRepository->getMapper()->getPrimaryKey() as $pkField) {
+            unset($payload[$pkField]);
         }
-
-        $model = $this->getOrFail($pkValue);
         ObjectCopy::copy($payload, $model);
         $this->baseRepository->save($model);
         return $model;

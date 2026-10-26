@@ -164,6 +164,7 @@ class CodegenTest extends TestCase
             $this->assertEqualsCanonicalizing([
                 'field', 'property', 'type', 'php_type', 'openapi_type', 'openapi_format',
                 'null', 'key', 'default', 'extra', 'parent_table', 'openapi_max_length', 'openapi_min_length',
+                'openapi_arguments',
             ], array_keys($field), "Field variable contract changed for column '{$field['field']}'");
         }
 
@@ -216,7 +217,9 @@ class CodegenTest extends TestCase
         $this->assertValidPhp($code);
         $this->assertSame('no', $data['autoIncrement']);
         $this->assertStringContainsString('use ByJG\MicroOrm\Attributes\TableUuidPKAttribute;', $code);
-        $this->assertStringContainsString('#[TableUuidPKAttribute("product_item")]', $code);
+        $this->assertStringContainsString('#[TableUuidPKAttribute("product_item", validator: SchemaValidator::class)]', $code);
+        // The UUID is seeded by the attribute, so the key is generated: readOnly
+        $this->assertStringContainsString('#[OA\Property(type: "string", format: "string", readOnly: true)]', $code);
         $this->assertStringContainsString('#[FieldUuidAttribute(primaryKey: true, fieldName: "id")]', $code);
         $this->assertStringNotContainsString('MySql', $code);
     }
@@ -327,8 +330,8 @@ class CodegenTest extends TestCase
 
     public function testPropertyArgumentsFollowTheAttributeOrder(): void
     {
-        // Named arguments in the order OA\Property declares them (type, format, nullable,
-        // maxLength, minLength), so IDE inspections do not flag the generated code.
+        // Named arguments in the order OA\Property declares them (type, format, readOnly,
+        // nullable, maxLength, minLength), so IDE inspections do not flag the generated code.
         $definition = $this->tableDefinition() + $this->byName([
             $this->column('nickname', 'varchar(30)', false, 'string', 30),
         ]);
@@ -349,7 +352,11 @@ class CodegenTest extends TestCase
         $this->assertValidPhp($code);
         $this->assertStringContainsString('namespace App\Model;', $code);
         $this->assertStringContainsString('class ProductItem', $code);
-        $this->assertStringContainsString('#[TableAttribute("product_item")]', $code);
+        // Validated against its own OpenAPI schema on every save
+        $this->assertStringContainsString('#[TableAttribute("product_item", validator: SchemaValidator::class)]', $code);
+        $this->assertStringContainsString('use ByJG\Gluo\Util\SchemaValidator;', $code);
+        // The auto-increment key is generated: readOnly
+        $this->assertStringContainsString('#[OA\Property(type: "integer", format: "int32", readOnly: true)]', $code);
         $this->assertStringContainsString('use ByJG\Gluo\Trait\OaCreatedAt;', $code);
         $this->assertStringContainsString('use ByJG\Gluo\Trait\OaUpdatedAt;', $code);
         $this->assertStringContainsString('use ByJG\Gluo\Trait\OaDeletedAt;', $code);
@@ -398,6 +405,14 @@ class CodegenTest extends TestCase
         $this->assertStringNotContainsString('Config::get(', $code);
         $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120, minLength: 1)', $code);
 
+        // PUT takes the key from the path, and the same body as POST: the writable fields only
+        $this->assertStringContainsString('path: "/product/item/{id}",' . "\n" . '        security', $code);
+        $this->assertSame(2, substr_count($code, 'new OA\Property(property: "name",'));
+        // The key appears once: in the POST response, never in a request body
+        $this->assertSame(1, substr_count($code, 'property: "id"'));
+        $this->assertStringNotContainsString('property: "createdAt"', $code);
+        $this->assertStringContainsString("\$this->productItemService->update(\$request->attribute('id'), ValidateRequest::getPayload());", $code);
+
         // The list endpoint only documents the query parameters it applies.
         $this->assertStringContainsString("OrderBy::fromQueryString(\$request->queryString('orderBy'), ProductItem::class)", $code);
         $this->assertStringContainsString('use App\Model\ProductItem;', $code);
@@ -413,12 +428,18 @@ class CodegenTest extends TestCase
         $this->assertValidPhp($code);
         $this->assertStringContainsString('use ByJG\Gluo\Util\FakeApiRequester;', $code);
         $this->assertStringContainsString('class ProductItemTest', $code);
-        // The invalid bodies reach the server: one case per required text column, plus the
-        // missing primary key on PUT and the missing required fields on POST.
+        // The invalid bodies reach the server, on POST and on PUT: the key in the body, the
+        // missing required fields, and one case per required text column.
         $this->assertStringContainsString('public function testInvalidPayloadIsRejectedByTheServer()', $code);
-        $this->assertStringContainsString("'PUT without the primary key' => ['PUT', (object)[]],", $code);
-        $this->assertStringContainsString("'POST without the required fields' => ['POST', (object)[]],", $code);
-        $this->assertStringContainsString("'POST with an empty name' => ['POST', array_merge(\$sample, ['name' => ''])],", $code);
+        $this->assertStringContainsString("'POST with the key in the body' => ['POST', \$collection, \$sample + ['id' => 1]],", $code);
+        $this->assertStringContainsString("'PUT with the key in the body' => ['PUT', \$item, \$sample + ['id' => 1]],", $code);
+        $this->assertStringContainsString("'POST without the required fields' => ['POST', \$collection, (object)[]],", $code);
+        $this->assertStringContainsString("'PUT without the required fields' => ['PUT', \$item, (object)[]],", $code);
+        $this->assertStringContainsString("'POST with an empty name' => ['POST', \$collection, array_merge(\$sample, ['name' => ''])],", $code);
+        $this->assertStringContainsString("'PUT with an empty name' => ['PUT', \$item, array_merge(\$sample, ['name' => ''])],", $code);
+        // PUT sends the key in the path, an integer for an int(11) key
+        $this->assertStringContainsString('->withPath("/product/item/1")', $code);
+        $this->assertStringNotContainsString("->withMethod('PUT')\n            ->withPath(\"/product/item\")", $code);
         $this->assertStringContainsString('$request->send();', $code);
     }
 
@@ -435,6 +456,8 @@ class CodegenTest extends TestCase
         $this->assertStringContainsString('use ByJG\Gluo\Attribute\RequireAuthenticated;', $rest);
         $this->assertStringContainsString('class ProductItemController', $rest);
         $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120, minLength: 1)', $rest);
+        $this->assertSame(2, substr_count($rest, 'new OA\Property(property: "name",'));
+        $this->assertStringContainsString("\$model = ProductItem::get(\$request->attribute('id'));\n\n        if (is_null(\$model)) {\n            throw new Error404Exception(\"ProductItem not found\");", $rest);
 
         $this->assertStringContainsString("->orderBy(OrderBy::fromQueryString(\$request->queryString('orderBy'), ProductItem::class))", $rest);
         $this->assertStringContainsString('use ByJG\Gluo\Util\OrderBy;', $rest);
