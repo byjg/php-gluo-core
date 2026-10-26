@@ -10,7 +10,7 @@ trait OaCreatedAt
 {
     use CreatedAt;
 
-    #[OA\Property(type: "string", format: "date-time", nullable: true)]
+    #[OA\Property(type: "string", format: "date-time", readOnly: true, nullable: true)]
     #[FieldAttribute(fieldName: "created_at", syncWithDb: false)]
     protected string|null $createdAt = null;
 }

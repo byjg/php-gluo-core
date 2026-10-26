@@ -163,7 +163,8 @@ class CodegenTest extends TestCase
         foreach ($data['fields'] as $field) {
             $this->assertEqualsCanonicalizing([
                 'field', 'property', 'type', 'php_type', 'openapi_type', 'openapi_format',
-                'null', 'key', 'default', 'extra', 'parent_table', 'openapi_max_length',
+                'null', 'key', 'default', 'extra', 'parent_table', 'openapi_max_length', 'openapi_min_length',
+                'openapi_arguments',
             ], array_keys($field), "Field variable contract changed for column '{$field['field']}'");
         }
 
@@ -216,7 +217,9 @@ class CodegenTest extends TestCase
         $this->assertValidPhp($code);
         $this->assertSame('no', $data['autoIncrement']);
         $this->assertStringContainsString('use ByJG\MicroOrm\Attributes\TableUuidPKAttribute;', $code);
-        $this->assertStringContainsString('#[TableUuidPKAttribute("product_item")]', $code);
+        $this->assertStringContainsString('#[TableUuidPKAttribute("product_item", validator: SchemaValidator::class)]', $code);
+        // The UUID is seeded by the attribute, so the key is generated: readOnly
+        $this->assertStringContainsString('#[OA\Property(type: "string", format: "string", readOnly: true)]', $code);
         $this->assertStringContainsString('#[FieldUuidAttribute(primaryKey: true, fieldName: "id")]', $code);
         $this->assertStringNotContainsString('MySql', $code);
     }
@@ -296,6 +299,52 @@ class CodegenTest extends TestCase
         }
     }
 
+    public function testMinLengthOnlyForRequiredTextWithoutDefault(): void
+    {
+        $definition = $this->tableDefinition() + $this->byName([
+            $this->column('code', 'char(3)', true, 'string', 3),
+            $this->column('description', 'text', true),
+            $this->column('nickname', 'varchar(30)', false, 'string', 30),
+            $this->column('status', 'varchar(10)', true, 'string', 10, default: 'new'),
+            $this->column('slug', 'varchar(60)', true, 'string', 60, generated: true),
+            $this->column('owner_id', 'binary(16)', true),
+            $this->column('sku', 'varchar(20)', true, 'string', 20, primaryKey: true),
+        ]);
+
+        $data = $this->scripts->callBuildCodegenData('product_item', $definition, $this->tableIndexes(), false);
+        $byField = array_column($data['fields'], 'openapi_min_length', 'field');
+
+        // NOT NULL text the client must send: an empty string is refused like a missing value.
+        $this->assertSame(1, $byField['name']);
+        $this->assertSame(1, $byField['code']);
+        $this->assertSame(1, $byField['description']);
+        // Nullable, defaulted, generated, key and non-text columns are left alone.
+        $this->assertSame(0, $byField['nickname']);
+        $this->assertSame(0, $byField['status']);
+        $this->assertSame(0, $byField['slug']);
+        $this->assertSame(0, $byField['owner_id']);
+        $this->assertSame(0, $byField['sku']);
+        $this->assertSame(0, $byField['is_active']);
+        $this->assertSame(0, $byField['price']);
+    }
+
+    public function testPropertyArgumentsFollowTheAttributeOrder(): void
+    {
+        // Named arguments in the order OA\Property declares them (type, format, readOnly,
+        // nullable, maxLength, minLength), so IDE inspections do not flag the generated code.
+        $definition = $this->tableDefinition() + $this->byName([
+            $this->column('nickname', 'varchar(30)', false, 'string', 30),
+        ]);
+        $data = $this->scripts->callBuildCodegenData('product_item', $definition, $this->tableIndexes(), false);
+
+        $model = $this->scripts->callRenderCodegenTemplate('model.php', $data);
+        $this->assertStringContainsString('#[OA\Property(type: "string", format: "string", nullable: true, maxLength: 30)]', $model);
+        $this->assertStringContainsString('#[OA\Property(type: "string", format: "string", maxLength: 120, minLength: 1)]', $model);
+
+        $rest = $this->scripts->callRenderCodegenTemplate('controller.php', $data);
+        $this->assertStringContainsString('new OA\Property(property: "nickname", type: "string", format: "string", nullable: true, maxLength: 30)', $rest);
+    }
+
     public function testRenderModelTemplate(): void
     {
         $code = $this->scripts->callRenderCodegenTemplate('model.php', $this->buildData());
@@ -303,13 +352,18 @@ class CodegenTest extends TestCase
         $this->assertValidPhp($code);
         $this->assertStringContainsString('namespace App\Model;', $code);
         $this->assertStringContainsString('class ProductItem', $code);
-        $this->assertStringContainsString('#[TableAttribute("product_item")]', $code);
+        // Validated against its own OpenAPI schema on every save
+        $this->assertStringContainsString('#[TableAttribute("product_item", validator: SchemaValidator::class)]', $code);
+        $this->assertStringContainsString('use ByJG\Gluo\Util\SchemaValidator;', $code);
+        // The auto-increment key is generated: readOnly
+        $this->assertStringContainsString('#[OA\Property(type: "integer", format: "int32", readOnly: true)]', $code);
         $this->assertStringContainsString('use ByJG\Gluo\Trait\OaCreatedAt;', $code);
         $this->assertStringContainsString('use ByJG\Gluo\Trait\OaUpdatedAt;', $code);
         $this->assertStringContainsString('use ByJG\Gluo\Trait\OaDeletedAt;', $code);
-        $this->assertStringContainsString('#[OA\Property(type: "string", format: "string", maxLength: 120)]', $code);
+        $this->assertStringContainsString('#[OA\Property(type: "string", format: "string", maxLength: 120, minLength: 1)]', $code);
         $this->assertStringContainsString('#[OA\Property(type: "number", format: "double", nullable: true)]', $code);
         $this->assertSame(1, substr_count($code, 'maxLength'));
+        $this->assertSame(1, substr_count($code, 'minLength'));
     }
 
     public function testRenderRepositoryTemplate(): void
@@ -349,7 +403,15 @@ class CodegenTest extends TestCase
         );
         $this->assertStringContainsString('$this->productItemService->getOrFail(', $code);
         $this->assertStringNotContainsString('Config::get(', $code);
-        $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120)', $code);
+        $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120, minLength: 1)', $code);
+
+        // PUT takes the key from the path, and the same body as POST: the writable fields only
+        $this->assertStringContainsString('path: "/product/item/{id}",' . "\n" . '        security', $code);
+        $this->assertSame(2, substr_count($code, 'new OA\Property(property: "name",'));
+        // The key appears once: in the POST response, never in a request body
+        $this->assertSame(1, substr_count($code, 'property: "id"'));
+        $this->assertStringNotContainsString('property: "createdAt"', $code);
+        $this->assertStringContainsString("\$this->productItemService->update(\$request->attribute('id'), ValidateRequest::getPayload());", $code);
 
         // The list endpoint only documents the query parameters it applies.
         $this->assertStringContainsString("OrderBy::fromQueryString(\$request->queryString('orderBy'), ProductItem::class)", $code);
@@ -366,6 +428,19 @@ class CodegenTest extends TestCase
         $this->assertValidPhp($code);
         $this->assertStringContainsString('use ByJG\Gluo\Util\FakeApiRequester;', $code);
         $this->assertStringContainsString('class ProductItemTest', $code);
+        // The invalid bodies reach the server, on POST and on PUT: the key in the body, the
+        // missing required fields, and one case per required text column.
+        $this->assertStringContainsString('public function testInvalidPayloadIsRejectedByTheServer()', $code);
+        $this->assertStringContainsString("'POST with the key in the body' => ['POST', \$collection, \$sample + ['id' => 1]],", $code);
+        $this->assertStringContainsString("'PUT with the key in the body' => ['PUT', \$item, \$sample + ['id' => 1]],", $code);
+        $this->assertStringContainsString("'POST without the required fields' => ['POST', \$collection, (object)[]],", $code);
+        $this->assertStringContainsString("'PUT without the required fields' => ['PUT', \$item, (object)[]],", $code);
+        $this->assertStringContainsString("'POST with an empty name' => ['POST', \$collection, array_merge(\$sample, ['name' => ''])],", $code);
+        $this->assertStringContainsString("'PUT with an empty name' => ['PUT', \$item, array_merge(\$sample, ['name' => ''])],", $code);
+        // PUT sends the key in the path, an integer for an int(11) key
+        $this->assertStringContainsString('->withPath("/product/item/1")', $code);
+        $this->assertStringNotContainsString("->withMethod('PUT')\n            ->withPath(\"/product/item\")", $code);
+        $this->assertStringContainsString('$request->send();', $code);
     }
 
     public function testRenderActiveRecordTemplates(): void
@@ -374,13 +449,19 @@ class CodegenTest extends TestCase
 
         $model = $this->scripts->callRenderCodegenTemplate('model.php', $data);
         $this->assertValidPhp($model);
-        $this->assertStringContainsString('use ByJG\MicroOrm\Trait\ActiveRecord;', $model);
+        // Gluo's ActiveRecord: MicroOrm's, plus getOrFail()
+        $this->assertStringContainsString('use ByJG\Gluo\Trait\ActiveRecord;', $model);
 
         $rest = $this->scripts->callRenderCodegenTemplate('controlleractiverecord.php', $data);
         $this->assertValidPhp($rest);
         $this->assertStringContainsString('use ByJG\Gluo\Attribute\RequireAuthenticated;', $rest);
         $this->assertStringContainsString('class ProductItemController', $rest);
-        $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120)', $rest);
+        $this->assertStringContainsString('new OA\Property(property: "name", type: "string", format: "string", maxLength: 120, minLength: 1)', $rest);
+        $this->assertSame(2, substr_count($rest, 'new OA\Property(property: "name",'));
+        // The lookup answers 404 itself: no null check in the controller
+        $this->assertStringContainsString("\$response->write(ProductItem::getOrFail(\$request->attribute('id')));", $rest);
+        $this->assertStringContainsString("\$model = ProductItem::getOrFail(\$request->attribute('id'));", $rest);
+        $this->assertStringNotContainsString('is_null($model)', $rest);
 
         $this->assertStringContainsString("->orderBy(OrderBy::fromQueryString(\$request->queryString('orderBy'), ProductItem::class))", $rest);
         $this->assertStringContainsString('use ByJG\Gluo\Util\OrderBy;', $rest);

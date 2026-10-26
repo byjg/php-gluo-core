@@ -10,7 +10,7 @@ trait OaUpdatedAt
 {
     use UpdatedAt;
 
-    #[OA\Property(type: "string", format: "date-time", nullable: true)]
+    #[OA\Property(type: "string", format: "date-time", readOnly: true, nullable: true)]
     #[FieldAttribute(fieldName: "updated_at", syncWithDb: false)]
     protected string|null $updatedAt = null;
 }

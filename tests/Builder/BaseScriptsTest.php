@@ -143,6 +143,55 @@ class BaseScriptsTest extends TestCase
         $this->assertFileExists($path . '/model.php.jinja');
     }
 
+    public function testOpenApiIsGeneratedAsVersion31(): void
+    {
+        $dir = $this->makeTempDir();
+        mkdir($dir . '/src', 0755, true);
+        file_put_contents($dir . '/src/SpecVersionProbe.php', <<<'PHP'
+<?php
+
+namespace Tests\Probe;
+
+use ByJG\Gluo\Trait\OaCreatedAt;
+use ByJG\Gluo\Trait\OaDeletedAt;
+use ByJG\Gluo\Trait\OaUpdatedAt;
+use OpenApi\Attributes as OA;
+
+#[OA\Info(version: "1.0.0", title: "Probe")]
+#[OA\Schema(required: ["name"], type: "object")]
+class SpecVersionProbe
+{
+    // As a generated model does; the scan always includes these traits.
+    use OaCreatedAt, OaUpdatedAt, OaDeletedAt;
+
+    #[OA\Property(type: "string", format: "string", maxLength: 100, minLength: 1)]
+    public ?string $name = null;
+
+    #[OA\Property(type: "string", format: "string", nullable: true)]
+    public ?string $note = null;
+
+    #[OA\Get(path: "/probe", responses: [new OA\Response(response: 200, description: "OK")])]
+    public function get(): void
+    {
+    }
+}
+PHP);
+        // swagger-php reads the attributes through reflection, so the class has to be loadable.
+        require_once $dir . '/src/SpecVersionProbe.php';
+        $this->scripts->setWorkdir($dir);
+
+        $this->scripts->runGenOpenApiDocs([]);
+
+        $spec = json_decode(file_get_contents($dir . '/public/docs/openapi.json'), true);
+        $this->assertSame('3.1.0', $spec['openapi']);
+        $properties = $spec['components']['schemas']['SpecVersionProbe']['properties'];
+        // 3.1 writes nullable as a type union instead of the 3.0 "nullable" keyword.
+        $this->assertSame(['string', 'null'], $properties['note']['type']);
+        $this->assertArrayNotHasKey('nullable', $properties['note']);
+        $this->assertSame(1, $properties['name']['minLength']);
+        $this->assertSame(100, $properties['name']['maxLength']);
+    }
+
     public function testAddToConfigInsertsUseStatementAndBinding(): void
     {
         $configFile = $this->makeConfigFile();

@@ -58,26 +58,26 @@ class BaseServiceTest extends TestCase
         $this->service->create(['id' => 1, 'name' => 'Widget']);
     }
 
-    public function testUpdateRequiresPrimaryKey(): void
-    {
-        $this->expectException(Error422Exception::class);
-        $this->expectExceptionMessage('Update requires primary key field(s): id');
-
-        $this->service->update(['name' => 'Widget']);
-    }
-
     public function testUpdateFailsForMissingId(): void
     {
         $this->expectException(Error404Exception::class);
 
-        $this->service->update(['id' => 999, 'name' => 'Ghost']);
+        $this->service->update(999, ['name' => 'Ghost']);
+    }
+
+    public function testUpdateTakesTheMessageOfThe404(): void
+    {
+        $this->expectException(Error404Exception::class);
+        $this->expectExceptionMessage('There is no product 999');
+
+        $this->service->update(999, ['name' => 'Ghost'], 'There is no product 999');
     }
 
     public function testUpdateChangesOnlyProvidedFields(): void
     {
         $model = $this->service->create(['name' => 'Widget', 'price' => 10.5]);
 
-        $updated = $this->service->update(['id' => $model->getId(), 'price' => 20.0]);
+        $updated = $this->service->update($model->getId(), ['price' => 20.0]);
 
         $this->assertEqualsWithDelta(20.0, $updated->getPrice(), 0.001);
         $this->assertSame('Widget', $updated->getName());
@@ -86,10 +86,29 @@ class BaseServiceTest extends TestCase
         $this->assertEqualsWithDelta(20.0, $found->getPrice(), 0.001);
     }
 
-    public function testGetOrFailThrows404(): void
+    public function testAKeyInThePayloadDoesNotRedirectTheUpdate(): void
+    {
+        $widget = $this->service->create(['name' => 'Widget', 'price' => 10.5]);
+        $gadget = $this->service->create(['name' => 'Gadget', 'price' => 5.0]);
+
+        $this->service->update($widget->getId(), ['id' => $gadget->getId(), 'price' => 20.0]);
+
+        $this->assertEqualsWithDelta(20.0, $this->service->getOrFail($widget->getId())->getPrice(), 0.001);
+        $this->assertEqualsWithDelta(5.0, $this->service->getOrFail($gadget->getId())->getPrice(), 0.001);
+    }
+
+    public function testGetOrFailTakesTheMessageOfThe404(): void
     {
         $this->expectException(Error404Exception::class);
-        $this->expectExceptionMessage('Id not found');
+        $this->expectExceptionMessage('There is no product 999');
+
+        $this->service->getOrFail(999, 'There is no product 999');
+    }
+
+    public function testGetOrFailThrows404NamingTheModel(): void
+    {
+        $this->expectException(Error404Exception::class);
+        $this->expectExceptionMessage('Product not found');
 
         $this->service->getOrFail(999);
     }
@@ -125,5 +144,21 @@ class BaseServiceTest extends TestCase
         $this->service->delete($model->getId());
 
         $this->assertEmpty($this->service->get($model->getId()));
+    }
+
+    public function testDeleteOfAMissingRecordIs404(): void
+    {
+        $this->expectException(Error404Exception::class);
+        $this->expectExceptionMessage('Product not found');
+
+        $this->service->delete(999);
+    }
+
+    public function testDeleteTakesTheMessageOfThe404(): void
+    {
+        $this->expectException(Error404Exception::class);
+        $this->expectExceptionMessage('There is no product 999');
+
+        $this->service->delete(999, 'There is no product 999');
     }
 }

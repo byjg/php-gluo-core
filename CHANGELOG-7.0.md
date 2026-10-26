@@ -29,8 +29,56 @@
   `tests/` in its `composer.json`: either rename that namespace to `Tests\` (the `autoload-dev`
   entry and the `namespace`/`use` lines under `tests/`), or adjust the namespace of each newly
   generated test by hand.
+- The generated `PUT` takes the key from the path: `PUT /product/{id}`, as `GET` and `DELETE`
+  already did, instead of `PUT /product` with the key in the body. Its body is the same as the
+  `POST`'s: the writable fields only. A key sent in the body of either is now an unknown
+  property, and the request is answered with 400. To move an existing controller, give its
+  `OA\Put` the path `/{resource}/{id}` and an `OA\Parameter` for `id` (as its `OA\Get` has),
+  use the `OA\RequestBody` of its `OA\Post`, and read the key with `$request->attribute('id')`.
+  The clients change from `PUT /product` to `PUT /product/{id}`.
+- `BaseService::update(array $payload)` is now `update(mixed $id, array $payload)`: the record
+  is the one `$id` names, as in `getOrFail($id)`, and a key in the payload is ignored instead
+  of selecting the record. Before, a payload without the key failed with 422.
+- `BaseService`'s 404 says which model was not found: `"Product not found"`, as the ActiveRecord
+  trait's `getOrFail()` does. It was `"Id not found"`. A client or a test that matches the old
+  message has to change, or pass the message it wants to `getOrFail()`, `update()` or `delete()`.
+- `BaseService::delete($id)` answers 404 when there is no record with that key. It used to succeed
+  without deleting anything, unlike the ActiveRecord controllers, which already looked the
+  record up first.
 
 ## New Features
+
+- `ByJG\Gluo\Trait\ActiveRecord`: MicroOrm's `ActiveRecord` plus `getOrFail($pk, ?string $message = null)`,
+  which returns the record or throws `Error404Exception` (`"<Model> not found"` by default, or the
+  message given). It is the ActiveRecord counterpart of `BaseService::getOrFail()`, like Laravel's
+  `findOrFail()`, so a controller does not write the null check before it shows, changes or
+  deletes a record. codegen uses it in ActiveRecord models, and the generated controllers call
+  `Model::getOrFail($request->attribute('id'))`. An existing model switches by importing
+  `ByJG\Gluo\Trait\ActiveRecord` instead of `ByJG\MicroOrm\Trait\ActiveRecord`.
+- `BaseService::getOrFail()`, `update()` and `delete()` take the message of their 404 as an optional
+  last argument: `getOrFail($id, $message)`, `update($id, $payload, $message)`,
+  `delete($id, $message)`.
+
+- `ByJG\Gluo\Util\SchemaValidator`: a model is validated against its own OpenAPI schema
+  every time it is saved, not only when it comes in through an endpoint with
+  `#[ValidateRequest]`. A command, a queue consumer or a service that saves a model is held to
+  the same rules: the types, lengths, ranges and required fields of its `OA\Property`
+  attributes. It is a MicroOrm validator, declared in the table attribute:
+
+  ```php
+  #[TableAttribute("product", validator: SchemaValidator::class)]
+  ```
+
+  The model is serialized as the API returns it and matched against
+  `#/components/schemas/<Model>` (`byjg/swagger-test`'s `Schema::matchDefinition()`). A
+  `readOnly` property, such as a generated key, is not required, and a null property is
+  treated as not set. A mismatch throws the same 400 as `#[ValidateRequest]`. Writes that do
+  not go through `save()` (`UpdateQuery`, `InsertBulkQuery`, raw SQL) are not validated.
+  codegen declares it on every generated model.
+- codegen marks the generated values `readOnly` in the model's schema: the primary key (an
+  auto-increment column, or a UUID seeded by `TableUuidPKAttribute`) and the virtual
+  columns. `OaCreatedAt`, `OaUpdatedAt` and `OaDeletedAt` mark their dates `readOnly` too.
+  The API returns them and does not take them.
 
 - `ByJG\Gluo\Console\Launcher`: the `php gluo` command line entry point.
 
@@ -114,7 +162,32 @@
   the request body of the generated controllers. Templates get the declared length as
   `field.openapi_max_length` (`0` for any other type).
 
+- **OpenAPI 3.1.** `php gluo openapi` writes the spec as OpenAPI 3.1.0 (it was swagger-php's
+  default, 3.0.0). A nullable property is written as a type union
+  (`"type": ["string", "null"]`) instead of `nullable: true`; the attributes in the code do
+  not change. Override `BaseScripts::getOpenApiVersion()` to keep 3.0.0.
+- **codegen: `minLength: 1` for required text.** A `NOT NULL` `char`/`varchar`/`text` column
+  with no default (not a key, not generated) gets `minLength: 1` in the model and in the
+  `POST` body, so an empty string is refused like a missing value, as Laravel's `required`
+  and Symfony's `NotBlank` do. New template variable: `openapi_min_length`.
+- **codegen: a test that reaches the server.** The generated test has
+  `testInvalidPayloadIsRejectedByTheServer`: a `PUT` without the primary key, a `POST`
+  without the required fields and an empty value for each `minLength` column, sent without
+  the OpenAPI spec on the client side so they reach `#[ValidateRequest]`, expecting 400.
+
 ## Bug Fixes
+
+- The generated test chose between an integer and a UUID key by the column's database type
+  being exactly `int`, so a key declared `int(11)` got UUID paths (`/product/<uuid>`). It now
+  uses the PHP type of the column.
+
+- The Repository-pattern controller accepted `createdAt`, `updatedAt` and `deletedAt` in the
+  `POST` body, which the ActiveRecord one leaves out: the dates are set by the database and
+  the traits. Both now leave them out.
+
+- codegen wrote the `OA\Property` arguments out of the order the attribute declares them
+  (`maxLength` before `nullable`), which IDE inspections flag. It now writes `type`,
+  `format`, `nullable`, `maxLength`, `minLength`.
 
 - The generated list endpoints documented `orderBy` and `filter` query parameters but
   only read `page` and `size`. `orderBy` is now applied, through the new

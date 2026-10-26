@@ -59,13 +59,7 @@ class {{ className }}Controller
     #[RequireAuthenticated]
     public function get{{ className }}(HttpResponse $response, HttpRequest $request): void
     {
-        $model = {{ className }}::get($request->attribute('id'));
-
-        if (is_null($model)) {
-            throw new Error404Exception("{{ className }} not found");
-        }
-
-        $response->write($model);
+        $response->write({{ className }}::getOrFail($request->attribute('id')));
     }
 
     /**
@@ -156,7 +150,7 @@ class {{ className }}Controller
             {% if nonNullableFields | count > 0 %}required: [ "{{ nonNullableFields | join('", "')}}" ],{% endif %}
             properties: [
 {% for field in fields -%}{% if field.key != "PRI" && field.extra != 'VIRTUAL GENERATED' && field.property != 'createdAt' && field.property != 'updatedAt' && field.property != 'deletedAt' -%}
-                new OA\Property(property: "{{ field.property }}", type: "{{ field.openapi_type }}", format: "{{ field.openapi_format }}"{% if field.openapi_max_length %}, maxLength: {{ field.openapi_max_length }}{% endif %}{% if field.null == "YES" %}, nullable: true{% endif %}){% if loop.last == false %}, {% endif %}
+                new OA\Property(property: "{{ field.property }}", {{ field.openapi_arguments }}){% if loop.last == false %}, {% endif %}
 {% endif %}{% endfor %}
             ]
         )
@@ -215,16 +209,32 @@ class {{ className }}Controller
      * @throws ReflectionException
      */
     #[OA\Put(
-        path: "/{{ restPath }}",
+        path: "/{{ restPath }}/{id}",
         security: [
             ["jwt-token" => []]
         ],
         tags: ["{{ restTag }}"]
     )]
+    #[OA\Parameter(
+        name: "id",
+        in: "path",
+        required: true,
+        schema: new OA\Schema(
+            type: "{{ fields.0.openapi_type }}",
+            format: "{{ fields.0.openapi_format }}"
+        )
+    )]
     #[OA\RequestBody(
         description: "The object {{ className }} to be updated",
         required: true,
-        content: new OA\JsonContent(ref: "#/components/schemas/{{ className }}")
+        content: new OA\JsonContent(
+            {% if nonNullableFields | count > 0 %}required: [ "{{ nonNullableFields | join('", "')}}" ],{% endif %}
+            properties: [
+{% for field in fields -%}{% if field.key != "PRI" && field.extra != 'VIRTUAL GENERATED' && field.property != 'createdAt' && field.property != 'updatedAt' && field.property != 'deletedAt' -%}
+                new OA\Property(property: "{{ field.property }}", {{ field.openapi_arguments }}){% if loop.last == false %}, {% endif %}
+{% endif %}{% endfor %}
+            ]
+        )
     )]
     #[OA\Response(
         response: 200,
@@ -239,16 +249,10 @@ class {{ className }}Controller
     #[ValidateRequest]
     public function put{{ className }}(HttpResponse $response, HttpRequest $request): void
     {
-        $payload = ValidateRequest::getPayload();
+        $model = {{ className }}::getOrFail($request->attribute('id'));
 
-        $model = {{ className }}::get($payload['id'] ?? null);
-
-        if (is_null($model)) {
-            throw new Error404Exception("{{ className }} not found");
-        }
-
-        // Update model with payload using fill() method
-        $model->fill($payload);
+        // The key comes from the path; the body has only the writable fields
+        $model->fill(ValidateRequest::getPayload());
         $model->save();
     }
 
