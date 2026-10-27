@@ -143,7 +143,10 @@ class BaseScriptsTest extends TestCase
         $this->assertFileExists($path . '/model.php.jinja');
     }
 
-    public function testOpenApiIsGeneratedAsVersion31(): void
+    /**
+     * A project whose src has one class with OpenAPI attributes; the scripts work in it.
+     */
+    protected function makeSpecProject(): string
     {
         $dir = $this->makeTempDir();
         mkdir($dir . '/src', 0755, true);
@@ -176,9 +179,18 @@ class SpecVersionProbe
     }
 }
 PHP);
-        // swagger-php reads the attributes through reflection, so the class has to be loadable.
-        require_once $dir . '/src/SpecVersionProbe.php';
+        // swagger-php reads the attributes through reflection, so the class has to be loadable,
+        // once per run: another temporary copy would declare it again.
+        if (!class_exists('Tests\\Probe\\SpecVersionProbe', false)) {
+            require_once $dir . '/src/SpecVersionProbe.php';
+        }
         $this->scripts->setWorkdir($dir);
+        return $dir;
+    }
+
+    public function testOpenApiIsGeneratedAsVersion31(): void
+    {
+        $dir = $this->makeSpecProject();
 
         $this->scripts->runGenOpenApiDocs([]);
 
@@ -190,6 +202,105 @@ PHP);
         $this->assertArrayNotHasKey('nullable', $properties['note']);
         $this->assertSame(1, $properties['name']['minLength']);
         $this->assertSame(100, $properties['name']['maxLength']);
+    }
+
+    public function testASpecJustGeneratedIsCurrent(): void
+    {
+        $this->makeSpecProject();
+        $this->scripts->runGenOpenApiDocs([]);
+
+        $this->assertNull($this->scripts->runCheckOpenApi());
+    }
+
+    /**
+     * git rewrites the dates of the files it checks out: a source newer than the spec is not
+     * a stale spec when it generates the same.
+     */
+    public function testASourceNewerThanTheSpecIsNotAStaleSpec(): void
+    {
+        $dir = $this->makeSpecProject();
+        $this->scripts->runGenOpenApiDocs([]);
+        touch($dir . '/src/SpecVersionProbe.php', time() + 3600);
+
+        $this->assertNull($this->scripts->runCheckOpenApi());
+    }
+
+    public function testAMissingSpecIsReported(): void
+    {
+        $this->makeSpecProject();
+
+        $this->assertSame([
+            'public/docs/openapi.json does not exist.',
+            'Routes are read from it, so every endpoint will 404.',
+        ], $this->scripts->runCheckOpenApi());
+    }
+
+    /**
+     * The committed spec, generated before the sources changed: `$change` edits it.
+     */
+    protected function staleSpec(callable $change): void
+    {
+        $dir = $this->makeSpecProject();
+        $this->scripts->runGenOpenApiDocs([]);
+        $file = $dir . '/public/docs/openapi.json';
+        $spec = json_decode(file_get_contents($file), true);
+        $spec = $change($spec);
+        file_put_contents($file, json_encode($spec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function testAnEndpointThatMovedIsReportedAsRemovedAndAdded(): void
+    {
+        $this->staleSpec(function (array $spec): array {
+            $spec['paths']['/old-probe'] = $spec['paths']['/probe'];
+            unset($spec['paths']['/probe']);
+            return $spec;
+        });
+
+        $this->assertSame([
+            'public/docs/openapi.json is not what the sources generate:',
+            '  removed  GET /old-probe',
+            '  added    GET /probe',
+            'New or changed endpoints will 404 until it is rebuilt.',
+        ], $this->scripts->runCheckOpenApi());
+    }
+
+    public function testAChangedEndpointAndSchemaAreReported(): void
+    {
+        $this->staleSpec(function (array $spec): array {
+            $spec['paths']['/probe']['get']['responses']['200']['description'] = 'Fine';
+            $spec['components']['schemas']['SpecVersionProbe']['properties']['name']['maxLength'] = 50;
+            return $spec;
+        });
+
+        $this->assertSame([
+            'public/docs/openapi.json is not what the sources generate:',
+            '  changed  GET /probe',
+            '  changed  schema SpecVersionProbe',
+            'New or changed endpoints will 404 until it is rebuilt.',
+        ], $this->scripts->runCheckOpenApi());
+    }
+
+    public function testAChangeOutsideTheEndpointsAndSchemasIsReported(): void
+    {
+        $this->staleSpec(function (array $spec): array {
+            $spec['info']['title'] = 'Old title';
+            return $spec;
+        });
+
+        $this->assertSame([
+            'public/docs/openapi.json is not what the sources generate:',
+            '  changed  the rest (info, servers, security...)',
+            'New or changed endpoints will 404 until it is rebuilt.',
+        ], $this->scripts->runCheckOpenApi());
+    }
+
+    public function testASpecThatIsNotJsonIsReported(): void
+    {
+        $dir = $this->makeSpecProject();
+        mkdir($dir . '/public/docs', 0755, true);
+        file_put_contents($dir . '/public/docs/openapi.json', '{"openapi": ');
+
+        $this->assertSame(['public/docs/openapi.json is not valid JSON.'], $this->scripts->runCheckOpenApi());
     }
 
     public function testAddToConfigInsertsUseStatementAndBinding(): void

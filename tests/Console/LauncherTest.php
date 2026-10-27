@@ -87,6 +87,29 @@ class LauncherTest extends LauncherTestCase
         ], $this->scripts->calls);
     }
 
+    public function testTestFailsBeforePhpUnitWhenTheSpecIsOutOfDate(): void
+    {
+        $this->scripts->staleSpec = ['public/docs/openapi.json is not what the sources generate.'];
+
+        [$exitCode, , $stdErr] = $this->gluo('test');
+
+        $this->assertSame(1, $exitCode);
+        $this->assertSame([['runCheckOpenApi', [], false]], $this->scripts->calls);
+        $this->assertStringContainsString('The OpenAPI spec is out of date', $stdErr);
+        $this->assertStringContainsString('public/docs/openapi.json is not what the sources generate.', $stdErr);
+        $this->assertStringContainsString('Run:  php gluo openapi', $stdErr);
+    }
+
+    public function testOpenApiCheckFailsWhenTheSpecIsOutOfDate(): void
+    {
+        $this->scripts->staleSpec = ['public/docs/openapi.json does not exist.'];
+
+        [$exitCode, , $stdErr] = $this->gluo('openapi:check');
+
+        $this->assertSame(1, $exitCode);
+        $this->assertStringContainsString('public/docs/openapi.json does not exist.', $stdErr);
+    }
+
     public static function envProvider(): array
     {
         return [

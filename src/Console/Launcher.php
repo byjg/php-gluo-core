@@ -40,9 +40,9 @@ class Launcher extends ScriptifyLauncher
         'migrate:update' => 'Migrate up or down to a specific version or latest',
         'migrate:version' => 'Show the current database version (alias: migrate:status)',
         'openapi' => 'Generate the OpenAPI spec from the controller attributes',
-        'openapi:check' => 'Warn when the OpenAPI spec is older than its sources',
+        'openapi:check' => 'Fail when the OpenAPI spec is not what the sources generate',
         'terminal' => 'Open an interactive PHP terminal',
-        'test' => 'Run the test suite (warns first when the OpenAPI spec is stale)',
+        'test' => 'Run the test suite (fails first when the OpenAPI spec is out of date)',
         'uninstall' => 'Remove a service created by install',
     ];
 
@@ -238,11 +238,12 @@ class Launcher extends ScriptifyLauncher
                 return 0;
 
             case 'openapi:check':
-                $this->checkOpenApi();
-                return 0;
+                return $this->checkOpenApi() ? 0 : 1;
 
             case 'test':
-                $this->checkOpenApi();
+                if (!$this->checkOpenApi()) {
+                    return 1;
+                }
                 return $this->getScripts()->runTest($arguments);
 
             // Compatibility form for the `composer codegen -- --table=x all` alias:
@@ -263,18 +264,24 @@ class Launcher extends ScriptifyLauncher
     }
 
     /**
-     * Warn when the OpenAPI spec is older than its sources. The check lives in the
-     * project's Scripts, because the project decides which sources the spec comes from.
+     * Whether the OpenAPI spec is what the sources generate; when not, says why and how to
+     * rebuild it.
      *
      * @throws Exception
      */
-    protected function checkOpenApi(): void
+    protected function checkOpenApi(): bool
     {
-        $scripts = $this->getScripts();
-        if (!method_exists($scripts, 'runCheckOpenApi')) {
-            throw new Exception(get_class($scripts) . ' does not implement runCheckOpenApi().');
+        $stale = $this->getScripts()->runCheckOpenApi();
+        if ($stale === null) {
+            return true;
         }
-        $scripts->runCheckOpenApi();
+        $rule = str_repeat('!', 72);
+        fwrite($this->stdErr, "\n$rule\n  The OpenAPI spec is out of date\n\n");
+        foreach ($stale as $line) {
+            fwrite($this->stdErr, "  $line\n");
+        }
+        fwrite($this->stdErr, "\n  Run:  php gluo openapi\n  then review and commit it.\n$rule\n\n");
+        return false;
     }
 
     /**
