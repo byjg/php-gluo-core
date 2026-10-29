@@ -2,30 +2,27 @@
 
 namespace ByJG\Gluo\Model;
 
-use ByJG\Authenticate\Definition\PasswordDefinition;
-use ByJG\Authenticate\MapperFunctions\PasswordSha1Mapper;
+use ByJG\Authenticate\MapperFunctions\PasswordBcryptMapper;
 use ByJG\Authenticate\Model\UserModel;
-use ByJG\Config\Config;
 use ByJG\MicroOrm\Attributes\FieldAttribute;
 use ByJG\MicroOrm\Attributes\FieldUuidAttribute;
 use ByJG\MicroOrm\Literal\Literal;
-use Exception;
 use OpenApi\Attributes as OA;
 
 #[OA\Schema(required: ["email"], type: "object")]
 abstract class BaseUser extends UserModel
 {
     // Reset flow fields
-    const PROP_RESETTOKENEXPIRE = 'resettokenexpire';
-    const PROP_RESETTOKEN = 'resettoken';
-    const PROP_RESETCODE = 'resetcode';
-    const PROP_RESETALLOWED = 'resetallowed';
+    const string PROP_RESET_TOKEN_EXPIRE = 'resettokenexpire';
+    const string PROP_RESET_TOKEN = 'resettoken';
+    const string PROP_RESET_CODE = 'resetcode';
+    const string PROP_RESET_ALLOWED = 'resetallowed';
 
-    const VALUE_YES = 'yes';
-    const VALUE_NO = 'no';
+    const string VALUE_YES = 'yes';
+    const string VALUE_NO = 'no';
 
-    const ROLE_ADMIN = 'admin';
-    const ROLE_USER = 'user';
+    const string ROLE_ADMIN = 'admin';
+    const string ROLE_USER = 'user';
 
     #[OA\Property(type: "string", format: "string")]
     #[FieldUuidAttribute(primaryKey: true)]
@@ -43,8 +40,10 @@ abstract class BaseUser extends UserModel
     #[FieldAttribute]
     protected ?string $username = null;
 
+    // bcrypt; a SHA-1 hash of an older database still logs in and is replaced at the next login.
+    // The column needs 60 characters: VARCHAR(255)
     #[OA\Property(type: "string", format: "string")]
-    #[FieldAttribute(updateFunction: PasswordSha1Mapper::class)]
+    #[FieldAttribute(updateFunction: PasswordBcryptMapper::class)]
     protected ?string $password = null;
 
     #[OA\Property(type: "string", format: "string")]
@@ -52,13 +51,4 @@ abstract class BaseUser extends UserModel
     protected ?string $role = null;
 
     protected array $propertyList = [];
-
-    /**
-     * @throws Exception
-     */
-    public function __construct(string $name = "", string $email = "", string $username = "", string $password = "", string $role = "")
-    {
-        parent::__construct($name, $email, $username, $password, $role);
-        $this->withPasswordDefinition(Config::get(PasswordDefinition::class));
-    }
 }
