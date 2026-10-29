@@ -14,6 +14,9 @@ class RecordingScripts extends BaseScripts
 
     public int $testExitCode = 0;
 
+    /** @var string[]|null What runCheckOpenApi() says: null when the spec is current. */
+    public ?array $staleSpec = null;
+
     #[\Override]
     public function runMigrate(array $arguments): void
     {
@@ -39,8 +42,10 @@ class RecordingScripts extends BaseScripts
         return $this->testExitCode;
     }
 
-    public function runCheckOpenApi(): void
+    #[\Override]
+    public function runCheckOpenApi(): ?array
     {
         $this->calls[] = ['runCheckOpenApi', [], getenv('APP_ENV')];
+        return $this->staleSpec;
     }
 }

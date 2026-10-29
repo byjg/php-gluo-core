@@ -314,7 +314,109 @@ abstract class BaseScripts
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
+        file_put_contents($outputPath, $this->generateOpenApiJson());
+    }
 
+    /**
+     * Routing is read from the generated spec: a controller or model change that was not
+     * regenerated is a silent 404, not an error. So the spec must be what the sources
+     * generate now. Compares the contents, not the dates: git rewrites the dates of the
+     * files it checks out.
+     *
+     * @return string[]|null why the spec is missing or out of date; null when it is current
+     * @throws Exception
+     */
+    public function runCheckOpenApi(): ?array
+    {
+        $outputPath = $this->getOpenApiOutputPath();
+        $shown = str_starts_with($outputPath, $this->workdir . '/')
+            ? substr($outputPath, strlen($this->workdir) + 1)
+            : $outputPath;
+
+        if (!file_exists($outputPath)) {
+            return [
+                "$shown does not exist.",
+                'Routes are read from it, so every endpoint will 404.',
+            ];
+        }
+        $current = (string)file_get_contents($outputPath);
+        $generated = $this->generateOpenApiJson();
+        if ($current === $generated) {
+            return null;
+        }
+        $committed = json_decode($current, true);
+        if (!is_array($committed)) {
+            return ["$shown is not valid JSON."];
+        }
+        /** @var array $expected */
+        $expected = json_decode($generated, true);
+        return [
+            "$shown is not what the sources generate:",
+            ...array_map(
+                fn(string $line) => "  $line",
+                $this->describeOpenApiDrift($committed, $expected) ?: ['changed  the formatting or the key order only']
+            ),
+            'New or changed endpoints will 404 until it is rebuilt.',
+        ];
+    }
+
+    /**
+     * What differs between the committed spec and the generated one, by endpoint and by
+     * schema: `changed  GET /note/{id}`, `added    schema Note`. Everything else in the spec
+     * is one line.
+     *
+     * @return string[]
+     */
+    protected function describeOpenApiDrift(array $committed, array $generated): array
+    {
+        $lines = [];
+        $committedPaths = (array)($committed['paths'] ?? []);
+        $generatedPaths = (array)($generated['paths'] ?? []);
+        foreach (array_unique([...array_keys($committedPaths), ...array_keys($generatedPaths)]) as $path) {
+            $was = (array)($committedPaths[$path] ?? []);
+            $is = (array)($generatedPaths[$path] ?? []);
+            foreach (array_unique([...array_keys($was), ...array_keys($is)]) as $method) {
+                $name = in_array($method, self::HTTP_METHODS, true)
+                    ? strtoupper($method) . " $path"
+                    : "$path ($method)";
+                $lines[] = self::drift($was[$method] ?? null, $is[$method] ?? null, $name);
+            }
+        }
+
+        $committedSchemas = (array)($committed['components']['schemas'] ?? []);
+        $generatedSchemas = (array)($generated['components']['schemas'] ?? []);
+        foreach (array_unique([...array_keys($committedSchemas), ...array_keys($generatedSchemas)]) as $schema) {
+            $lines[] = self::drift($committedSchemas[$schema] ?? null, $generatedSchemas[$schema] ?? null, "schema $schema");
+        }
+
+        $rest = function (array $spec): array {
+            unset($spec['paths'], $spec['components']['schemas']);
+            return $spec;
+        };
+        $lines[] = self::drift($rest($committed), $rest($generated), 'the rest (info, servers, security...)');
+
+        return array_values(array_filter($lines));
+    }
+
+    private const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
+
+    private static function drift(mixed $was, mixed $is, string $name): ?string
+    {
+        return match (true) {
+            $was === null => "added    $name",
+            $is === null => "removed  $name",
+            $was !== $is => "changed  $name",
+            default => null,
+        };
+    }
+
+    /**
+     * The spec the sources describe, as runGenOpenApiDocs() writes it.
+     *
+     * @throws Exception
+     */
+    protected function generateOpenApiJson(): string
+    {
         $generator = (new Generator())
             ->setConfig(["operationId.hash" => false])
             ->setVersion($this->getOpenApiVersion());
@@ -322,7 +424,7 @@ abstract class BaseScripts
         if (is_null($openapi)) {
             throw new Exception("No OpenAPI annotations found in " . implode(", ", $this->getOpenApiScanPaths()));
         }
-        file_put_contents($outputPath, $openapi->toJson());
+        return $openapi->toJson();
     }
 
     // --- Code Generator ---

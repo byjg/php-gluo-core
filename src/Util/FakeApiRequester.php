@@ -15,7 +15,7 @@ use ByJG\RestServer\Exception\Error520Exception;
 use ByJG\RestServer\Exception\OperationIdInvalidException;
 use ByJG\RestServer\Middleware\JwtMiddleware;
 use ByJG\RestServer\MockServer;
-use ByJG\RestServer\Route\OpenApiRouteList;
+use ByJG\RestServer\Route\RouteListInterface;
 use ByJG\WebRequest\Exception\MessageException;
 use ByJG\WebRequest\Exception\RequestException;
 use ByJG\WebRequest\MockClient;
@@ -67,7 +67,7 @@ class FakeApiRequester extends AbstractRequester
             $mock->withMiddleware(Config::get(JwtMiddleware::class));
         }
         $mock->withRequestObject($request);
-        $mock->handle(Config::get(OpenApiRouteList::class), false, false);
+        $mock->handle(Config::get(RouteListInterface::class), false, false);
 
         $httpClient = new MockClient($mock->getPsr7Response());
         return $httpClient->sendRequest($request);

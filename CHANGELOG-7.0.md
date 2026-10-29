@@ -5,6 +5,16 @@
 
 ## Breaking Changes
 
+- The routes are bound as `RouteListInterface::class` instead of `OpenApiRouteList::class`: the
+  `Application` and `FakeApiRequester` (the API tests) get them by that key. Rename the key in
+  `config/dev/03-api.php`; the binding itself stays the same:
+
+  ```php
+  RouteListInterface::class => DI::bind(OpenApiRouteList::class)
+      ->withConstructorArgs([__DIR__ . '/../../public/docs/openapi.json'])
+      // ...
+      ->toSingleton(),
+  ```
 - `BaseConfigBootstrap` no longer caches the resolved container for `staging` and `prod`.
   It used `FileSystemCacheEngine` in the system temp dir, which only works when that dir is
   thrown away on every deploy (e.g. a fresh container); on a cache that outlives the deploy
@@ -48,6 +58,21 @@
 
 ## New Features
 
+- `ByJG\Gluo\Http\Application`: the HTTP entry point of a Gluo application, what `public/app.php`
+  did itself. It gets the `Server` and the `OpenApiRouteList` from the container, and `handle()`
+  serves one request: `handle()` alone handles the request PHP's globals describe, as before, and
+  `handle($psr7Request)` a PSR-7 request (byjg/restserver's `Server::withRequestObject()`),
+  rendering RestServer's HTTP errors itself. A persistent worker (RoadRunner, Swoole, a CLI worker)
+  gets the `Application` once and calls `handle()` for each request. A project binds it in
+  `config/dev/03-api.php`:
+
+  ```php
+  Application::class => DI::bind(Application::class)
+      ->withInjectedConstructor()
+      ->toSingleton(),
+  ```
+
+  and `public/app.php` becomes `Config::get(Application::class)->handle();` (the starter does both).
 - `ByJG\Gluo\Trait\ActiveRecord`: MicroOrm's `ActiveRecord` plus `getOrFail($pk, ?string $message = null)`,
   which returns the record or throws `Error404Exception` (`"<Model> not found"` by default, or the
   message given). It is the ActiveRecord counterpart of `BaseService::getOrFail()`, like Laravel's
