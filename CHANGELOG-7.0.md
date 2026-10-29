@@ -17,6 +17,10 @@
   byjg/authuser 7.0 checks it on every save of the users repository (`PasswordDefinitionValidator`)
   and applies it to the users the service creates or loads. A `new User(...)` no longer validates
   its password in `setPassword()`; it is checked when it is saved.
+- The reset-flow constants of `BaseUser` are renamed: `PROP_RESETTOKEN` → `PROP_RESET_TOKEN`,
+  `PROP_RESETTOKENEXPIRE` → `PROP_RESET_TOKEN_EXPIRE`, `PROP_RESETCODE` → `PROP_RESET_CODE`,
+  `PROP_RESETALLOWED` → `PROP_RESET_ALLOWED`. Their values (the property names stored in the
+  database) are the same.
 - The routes are bound as `RouteListInterface::class` instead of `OpenApiRouteList::class`: the
   `Application` and `FakeApiRequester` (the API tests) get them by that key. Rename the key in
   `config/dev/03-api.php`; the binding itself stays the same:
