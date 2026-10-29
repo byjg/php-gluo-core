@@ -120,10 +120,10 @@ abstract class BaseLoginController
             if ($expireTimestamp === false) {
                 throw new RuntimeException("Failed to calculate expiration time");
             }
-            $user->set(BaseUser::PROP_RESETTOKEN, $token);
-            $user->set(BaseUser::PROP_RESETTOKENEXPIRE, date('Y-m-d H:i:s', $expireTimestamp));
-            $user->set(BaseUser::PROP_RESETCODE, $code);
-            $user->set(BaseUser::PROP_RESETALLOWED, null);
+            $user->set(BaseUser::PROP_RESET_TOKEN, $token);
+            $user->set(BaseUser::PROP_RESET_TOKEN_EXPIRE, date('Y-m-d H:i:s', $expireTimestamp));
+            $user->set(BaseUser::PROP_RESET_CODE, $code);
+            $user->set(BaseUser::PROP_RESET_ALLOWED, null);
             $usersService->save($user);
 
             $mailWrapper = Config::get(MailWrapperInterface::class);

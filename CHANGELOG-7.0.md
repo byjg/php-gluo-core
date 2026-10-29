@@ -5,6 +5,22 @@
 
 ## Breaking Changes
 
+- `BaseUser` hashes passwords with bcrypt (byjg/authuser's `PasswordBcryptMapper`) instead of
+  unsalted SHA-1. **Widen the `users.password` column to `VARCHAR(255)`** (a bcrypt hash has 60
+  characters; a new project gets it from the starter's `db/base.sql`, an existing one adds a migration:
+  `ALTER TABLE users MODIFY password VARCHAR(255) NOT NULL;`). Existing users keep logging in: a SHA-1 hash still
+  verifies, and the login (`createAuthToken()`) replaces it with a bcrypt hash; until the column is
+  widened, the SHA-1 hash is kept. To stay on SHA-1, redeclare `$password` in your `User` model with
+  `#[FieldAttribute(updateFunction: PasswordSha1Mapper::class)]`.
+- `BaseUser` has no constructor any more: it fetched the `PasswordDefinition` with `Config::get()`, so
+  creating a user needed the container. The definition reaches `UsersService` through DI, and
+  byjg/authuser 7.0 checks it on every save of the users repository (`PasswordDefinitionValidator`)
+  and applies it to the users the service creates or loads. A `new User(...)` no longer validates
+  its password in `setPassword()`; it is checked when it is saved.
+- The reset-flow constants of `BaseUser` are renamed: `PROP_RESETTOKEN` → `PROP_RESET_TOKEN`,
+  `PROP_RESETTOKENEXPIRE` → `PROP_RESET_TOKEN_EXPIRE`, `PROP_RESETCODE` → `PROP_RESET_CODE`,
+  `PROP_RESETALLOWED` → `PROP_RESET_ALLOWED`. Their values (the property names stored in the
+  database) are the same.
 - The routes are bound as `RouteListInterface::class` instead of `OpenApiRouteList::class`: the
   `Application` and `FakeApiRequester` (the API tests) get them by that key. Rename the key in
   `config/dev/03-api.php`; the binding itself stays the same:
