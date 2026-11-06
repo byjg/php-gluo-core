@@ -58,4 +58,12 @@ class ValidateRequest implements BeforeRouteInterface
     {
         return self::$payload;
     }
+
+    /**
+     * Forget the payload of the request (Application does it after each request, for a persistent worker)
+     */
+    public static function reset(): void
+    {
+        self::$payload = null;
+    }
 }

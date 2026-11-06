@@ -37,7 +37,8 @@ abstract class BaseConfigBootstrap implements ConfigInitializeInterface
      *
      * No environment caches the resolved container by default: where the cache lives depends
      * on how the project is deployed, so the project enables it here, e.g.
-     * `$definition->getConfigObject('prod')->withCache(new FileSystemCacheEngine());`
+     * `$definition->getConfigObject('prod')->withCache(new PhpFileCacheEngine('config'));` (byjg/cache-engine: PHP
+     * files that OPcache keeps in memory)
      *
      * To layer config directories (e.g. package defaults overridden by the project), call
      * `$definition->addConfigDirectory($dir)` for each one; the last directory wins. Once a directory

@@ -74,6 +74,14 @@
 
 ## New Features
 
+- `php gluo openapi` also compiles `openapi.json` into `generated/`: `routes.php`, the routes and their dispatch
+  data (byjg/restserver's `CompiledRouteList`), and `openapi.php`, the spec as a PHP array (byjg/swagger-test's
+  `Schema::fromFile()` reads it). OPcache keeps both in memory: a web request no longer parses `openapi.json`
+  for the routes (~390 us) nor for the request validation (~160 us), nor builds the dispatcher. `openapi:check`
+  (and `gluo test`) reports a missing or out-of-date compiled file. The routes are compiled from
+  `getOpenApiRouteList()` (the JSON-clean output processor by default) and written to `getGeneratedPath()`: override
+  them in the project's `Scripts`.
+
 - `ByJG\Gluo\Http\Application`: the HTTP entry point of a Gluo application, what `public/app.php`
   did itself. It gets the `Server` and the `OpenApiRouteList` from the container, and `handle()`
   serves one request: `handle()` alone handles the request PHP's globals describe, as before, and

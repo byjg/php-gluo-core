@@ -338,4 +338,50 @@ PHP);
 
         $this->assertSame($afterFirstRun, $afterSecondRun);
     }
+
+    /**
+     * `gluo openapi` also writes the routes (generated/routes.php) and the spec as a PHP array
+     * (generated/openapi.php): a web request loads them from OPcache instead of reading openapi.json
+     */
+    public function testTheRoutesAndTheSpecAreCompiledWithTheSpec(): void
+    {
+        $dir = $this->makeSpecProject();
+
+        $this->scripts->runGenOpenApiDocs([]);
+
+        $routes = new \ByJG\RestServer\Route\CompiledRouteList($dir . '/generated/routes.php');
+        $route = $routes->getRoute('GET', '/probe');
+        $this->assertNotNull($route);
+        $this->assertSame(['Tests\\Probe\\SpecVersionProbe', 'get'], $route->getClass());
+        $this->assertSame(\ByJG\RestServer\OutputProcessor\JsonCleanOutputProcessor::class, $route->getOutputProcessor());
+
+        $this->assertSame(
+            json_decode(file_get_contents($dir . '/public/docs/openapi.json'), true),
+            require $dir . '/generated/openapi.php'
+        );
+    }
+
+    public function testAMissingCompiledFileIsReported(): void
+    {
+        $dir = $this->makeSpecProject();
+        $this->scripts->runGenOpenApiDocs([]);
+        unlink($dir . '/generated/routes.php');
+
+        $this->assertSame([
+            'generated/routes.php does not exist.',
+            'Routes are read from it, so every endpoint will 404.',
+        ], $this->scripts->runCheckOpenApi());
+    }
+
+    public function testAStaleCompiledFileIsReported(): void
+    {
+        $dir = $this->makeSpecProject();
+        $this->scripts->runGenOpenApiDocs([]);
+        file_put_contents($dir . '/generated/openapi.php', "<?php return [];\n");
+
+        $this->assertSame([
+            'generated/openapi.php is not what public/docs/openapi.json generates.',
+            'Requests are validated against it.',
+        ], $this->scripts->runCheckOpenApi());
+    }
 }

@@ -21,6 +21,10 @@ use ByJG\DbMigration\Exception\InvalidMigrationFile;
 use ByJG\DbMigration\Migration;
 use ByJG\JinjaPhp\Exception\TemplateParseException;
 use ByJG\JinjaPhp\Loader\FileSystemLoader;
+use ByJG\RestServer\OutputProcessor\JsonCleanOutputProcessor;
+use ByJG\RestServer\Route\CompiledRouteList;
+use ByJG\RestServer\Route\OpenApiRouteList;
+use ByJG\RestServer\Route\RouteListInterface;
 use ByJG\Util\Uri;
 use Exception;
 use OpenApi\Annotations\OpenApi;
@@ -82,6 +86,23 @@ abstract class BaseScripts
     protected function getOpenApiOutputPath(): string
     {
         return $this->workdir . '/public/docs/openapi.json';
+    }
+
+    /**
+     * Override to change the directory of the files compiled from openapi.json (routes.php, openapi.php).
+     */
+    protected function getGeneratedPath(): string
+    {
+        return $this->workdir . '/generated';
+    }
+
+    /**
+     * The routes of openapi.json, as generated/routes.php compiles them. Override to change how they are read
+     * (the output processors...).
+     */
+    protected function getOpenApiRouteList(string $openApiPath): RouteListInterface
+    {
+        return (new OpenApiRouteList($openApiPath))->withDefaultProcessor(JsonCleanOutputProcessor::class);
     }
 
     /**
@@ -315,6 +336,61 @@ abstract class BaseScripts
             mkdir($dir, 0755, true);
         }
         file_put_contents($outputPath, $this->generateOpenApiJson());
+
+        $generatedPath = $this->getGeneratedPath();
+        if (!is_dir($generatedPath)) {
+            mkdir($generatedPath, 0755, true);
+        }
+        foreach ($this->compileOpenApi($outputPath) as $file => $contents) {
+            // A web request reads the file: it is replaced at once, never seen half written
+            $temp = "$generatedPath/.$file." . bin2hex(random_bytes(4));
+            file_put_contents($temp, $contents);
+            rename($temp, "$generatedPath/$file");
+        }
+    }
+
+    /**
+     * The files compiled from openapi.json, by name in the generated directory: the routes (routes.php, see
+     * CompiledRouteList) and the spec as a PHP array (openapi.php, for Schema::fromFile()). OPcache keeps them in
+     * memory, so a web request does not read openapi.json.
+     *
+     * @return array<string, string>
+     * @throws Exception
+     */
+    protected function compileOpenApi(string $openApiPath): array
+    {
+        $spec = json_decode((string)file_get_contents($openApiPath), true, flags: JSON_THROW_ON_ERROR);
+        return [
+            'routes.php' => CompiledRouteList::compile($this->getOpenApiRouteList($openApiPath)),
+            'openapi.php' => "<?php\n\n// public/docs/openapi.json as a PHP array (php gluo openapi). Do not edit.\n\n"
+                . 'return ' . var_export($spec, true) . ";\n",
+        ];
+    }
+
+    /**
+     * Why the files compiled from openapi.json are missing or out of date; null when they are current
+     *
+     * @return string[]|null
+     * @throws Exception
+     */
+    protected function checkCompiledOpenApi(string $openApiPath, string $shownSpec): ?array
+    {
+        $why = [
+            'routes.php' => 'Routes are read from it, so every endpoint will 404.',
+            'openapi.php' => 'Requests are validated against it.',
+        ];
+        $generatedPath = $this->getGeneratedPath();
+        foreach ($this->compileOpenApi($openApiPath) as $file => $contents) {
+            $path = "$generatedPath/$file";
+            $shown = str_starts_with($path, $this->workdir . '/') ? substr($path, strlen($this->workdir) + 1) : $path;
+            if (!file_exists($path)) {
+                return ["$shown does not exist.", $why[$file]];
+            }
+            if (file_get_contents($path) !== $contents) {
+                return ["$shown is not what $shownSpec generates.", $why[$file]];
+            }
+        }
+        return null;
     }
 
     /**
@@ -342,7 +418,7 @@ abstract class BaseScripts
         $current = (string)file_get_contents($outputPath);
         $generated = $this->generateOpenApiJson();
         if ($current === $generated) {
-            return null;
+            return $this->checkCompiledOpenApi($outputPath, $shown);
         }
         $committed = json_decode($current, true);
         if (!is_array($committed)) {
