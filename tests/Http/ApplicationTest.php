@@ -105,4 +105,33 @@ class ApplicationTest extends TestCase
             json_decode($output, true)
         );
     }
+
+    /**
+     * What a request keeps in static properties (the user of JwtContext, the payload of ValidateRequest) is forgotten
+     * after it: in a worker, the next request would read the previous one's user
+     */
+    public function testARequestForgetsThePreviousUserAndPayload(): void
+    {
+        $previous = new \ByJG\RestServer\HttpRequest([], [], [], [], [], ['jwt.data' => ['userid' => '7']], '');
+        \ByJG\Gluo\Util\JwtContext::setRequest($previous);
+        (new \ReflectionProperty(\ByJG\Gluo\Attribute\ValidateRequest::class, 'payload'))->setValue(null, ['name' => 'previous']);
+        $this->assertSame('7', \ByJG\Gluo\Util\JwtContext::getUserId());
+
+        $this->capture(fn() => Config::get(Application::class)->handle($this->psr7Request('POST', '/echo', '{"n":1}')));
+
+        $this->assertNull(\ByJG\Gluo\Util\JwtContext::getUserId());
+        $this->assertNull(\ByJG\Gluo\Attribute\ValidateRequest::getPayload());
+    }
+
+    /**
+     * Also when the request fails
+     */
+    public function testAFailedRequestForgetsTheUser(): void
+    {
+        \ByJG\Gluo\Util\JwtContext::setRequest(new \ByJG\RestServer\HttpRequest([], [], [], [], [], ['jwt.data' => ['userid' => '7']], ''));
+
+        $this->capture(fn() => Config::get(Application::class)->handle($this->psr7Request('GET', '/not-found')));
+
+        $this->assertNull(\ByJG\Gluo\Util\JwtContext::getUserId());
+    }
 }

@@ -2,6 +2,8 @@
 
 namespace ByJG\Gluo\Http;
 
+use ByJG\Gluo\Attribute\ValidateRequest;
+use ByJG\Gluo\Util\JwtContext;
 use ByJG\RestServer\ErrorHandler;
 use ByJG\RestServer\Route\RouteListInterface;
 use ByJG\RestServer\Server;
@@ -31,17 +33,32 @@ final class Application
      */
     public function handle(?ServerRequestInterface $request = null): void
     {
-        if ($request === null) {
-            // The exception handler RestServer registers renders the errors
-            $this->server->handle($this->routes);
-            return;
-        }
-
         try {
-            $this->server->withRequestObject($request)->handle($this->routes);
-        } catch (Throwable $exception) {
-            // Outside PHP-FPM an exception reaches the caller, not the registered handler
-            ErrorHandler::getInstance()->handleException($exception);
+            if ($request === null) {
+                // The exception handler RestServer registers renders the errors
+                $this->server->handle($this->routes);
+                return;
+            }
+
+            try {
+                $this->server->withRequestObject($request)->handle($this->routes);
+            } catch (Throwable $exception) {
+                // Outside PHP-FPM an exception reaches the caller, not the registered handler
+                ErrorHandler::getInstance()->handleException($exception);
+            }
+        } finally {
+            self::forgetTheRequest();
         }
+    }
+
+    /**
+     * What a request keeps in static properties: in a persistent worker they outlive it, and the next request would
+     * read the previous one's user (JwtContext, set by #[RequireAuthenticated] and #[RequireRole]) and payload
+     * (#[ValidateRequest])
+     */
+    private static function forgetTheRequest(): void
+    {
+        JwtContext::reset();
+        ValidateRequest::reset();
     }
 }
