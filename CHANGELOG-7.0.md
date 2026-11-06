@@ -226,6 +226,13 @@
 
 ## Bug Fixes
 
+- **`php gluo openapi` scans the `Oa*` traits only when a class uses them.** `getOpenApiScanPaths()` always added
+  gluo-core's `Trait/` directory, so in a project whose models use none of `OaCreatedAt`, `OaUpdatedAt`,
+  `OaDeletedAt` swagger-php warned about each of their properties ("Unexpected @OA\Property(), expected to be inside
+  @OA\Schema"), which belonged to no schema. Now only the traits a PHP file of `src/` names are scanned (a model
+  using `OaCreatedAt` and `OaUpdatedAt` no longer gets a warning for `OaDeletedAt`); a project that overrode
+  `getOpenApiScanPaths()` to avoid the warnings no longer needs to.
+
 - The generated test chose between an integer and a UUID key by the column's database type
   being exactly `int`, so a key declared `int(11)` got UUID paths (`/product/<uuid>`). It now
   uses the PHP type of the column.

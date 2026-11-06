@@ -384,4 +384,133 @@ PHP);
             'Requests are validated against it.',
         ], $this->scripts->runCheckOpenApi());
     }
+
+    /**
+     * A project whose models do not use the Oa* traits: one controller, one model, no trait
+     */
+    protected function makeSpecProjectWithoutTraits(): string
+    {
+        $dir = $this->makeTempDir();
+        mkdir($dir . '/src', 0755, true);
+        file_put_contents($dir . '/src/PlainProbe.php', <<<'PHP'
+<?php
+
+namespace Tests\PlainProbe;
+
+use OpenApi\Attributes as OA;
+
+#[OA\Info(version: "1.0.0", title: "Plain probe")]
+#[OA\Schema(required: ["name"], type: "object")]
+class PlainProbe
+{
+    #[OA\Property(type: "string")]
+    public ?string $name = null;
+
+    #[OA\Get(path: "/plain", operationId: "GET::/plain::Tests\\PlainProbe\\PlainProbe::get", responses: [new OA\Response(response: 200, description: "OK")])]
+    public function get(): void
+    {
+    }
+}
+PHP);
+        if (!class_exists('Tests\\PlainProbe\\PlainProbe', false)) {
+            require_once $dir . '/src/PlainProbe.php';
+        }
+        $this->scripts->setWorkdir($dir);
+        return $dir;
+    }
+
+    /**
+     * The warnings swagger-php triggers while the spec is generated
+     *
+     * @return string[]
+     */
+    protected function warningsOf(callable $generate): array
+    {
+        $warnings = [];
+        set_error_handler(function (int $level, string $message) use (&$warnings): bool {
+            $warnings[] = $message;
+            return true;
+        }, E_USER_WARNING | E_USER_NOTICE | E_WARNING);
+        try {
+            $generate();
+        } finally {
+            restore_error_handler();
+        }
+        return $warnings;
+    }
+
+    /**
+     * A model that uses the Oa* traits has their properties in its schema
+     */
+    public function testTheTraitsPropertiesAreInTheSchemaOfAModelThatUsesThem(): void
+    {
+        $dir = $this->makeSpecProject();
+
+        $warnings = $this->warningsOf(fn() => $this->scripts->runGenOpenApiDocs([]));
+
+        $spec = json_decode(file_get_contents($dir . '/public/docs/openapi.json'), true);
+        $properties = $spec['components']['schemas']['SpecVersionProbe']['properties'];
+        $this->assertArrayHasKey('createdAt', $properties);
+        $this->assertArrayHasKey('updatedAt', $properties);
+        $this->assertArrayHasKey('deletedAt', $properties);
+        $this->assertSame([], $warnings);
+    }
+
+    /**
+     * When no class uses the Oa* traits, their properties belong to no schema: the spec is generated without
+     * swagger-php's "Unexpected @OA\Property()" warnings
+     */
+    public function testTheTraitsAreNotScannedWhenNoClassUsesThem(): void
+    {
+        $dir = $this->makeSpecProjectWithoutTraits();
+
+        $warnings = $this->warningsOf(fn() => $this->scripts->runGenOpenApiDocs([]));
+
+        $this->assertSame([], $warnings);
+        $spec = json_decode(file_get_contents($dir . '/public/docs/openapi.json'), true);
+        $this->assertSame(['name'], array_keys($spec['components']['schemas']['PlainProbe']['properties']));
+        $this->assertNull($this->scripts->runCheckOpenApi());
+    }
+
+    /**
+     * Only the Oa* traits a class uses are scanned: one that no class uses would have a property in no schema
+     */
+    public function testOnlyTheTraitsAClassUsesAreScanned(): void
+    {
+        $dir = $this->makeTempDir();
+        mkdir($dir . '/src', 0755, true);
+        file_put_contents($dir . '/src/PartialProbe.php', <<<'PHP'
+<?php
+
+namespace Tests\PartialProbe;
+
+use ByJG\Gluo\Trait\OaCreatedAt;
+use OpenApi\Attributes as OA;
+
+#[OA\Info(version: "1.0.0", title: "Partial probe")]
+#[OA\Schema(required: ["name"], type: "object")]
+class PartialProbe
+{
+    use OaCreatedAt;
+
+    #[OA\Property(type: "string")]
+    public ?string $name = null;
+
+    #[OA\Get(path: "/partial", operationId: "GET::/partial::Tests\\PartialProbe\\PartialProbe::get", responses: [new OA\Response(response: 200, description: "OK")])]
+    public function get(): void
+    {
+    }
+}
+PHP);
+        if (!class_exists('Tests\\PartialProbe\\PartialProbe', false)) {
+            require_once $dir . '/src/PartialProbe.php';
+        }
+        $this->scripts->setWorkdir($dir);
+
+        $warnings = $this->warningsOf(fn() => $this->scripts->runGenOpenApiDocs([]));
+
+        $this->assertSame([], $warnings);
+        $spec = json_decode(file_get_contents($dir . '/public/docs/openapi.json'), true);
+        $this->assertSame(['createdAt', 'name'], array_keys($spec['components']['schemas']['PartialProbe']['properties']));
+    }
 }

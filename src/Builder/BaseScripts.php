@@ -27,10 +27,14 @@ use ByJG\RestServer\Route\OpenApiRouteList;
 use ByJG\RestServer\Route\RouteListInterface;
 use ByJG\Util\Uri;
 use Exception;
+use FilesystemIterator;
 use OpenApi\Annotations\OpenApi;
 use OpenApi\Generator;
 use Psr\SimpleCache\InvalidArgumentException;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use ReflectionException;
+use SplFileInfo;
 
 abstract class BaseScripts
 {
@@ -59,15 +63,46 @@ abstract class BaseScripts
 
     /**
      * Override to change the paths scanned for OpenAPI attributes.
-     * The package's Trait directory is always included so that models using
-     * the Oa* traits keep their properties in the generated schema.
+     * The package's Oa* traits (OaCreatedAt, ...) that a class of src/ uses are scanned too, so those models keep
+     * the traits' properties in the generated schema. A trait no class uses is not: its properties would belong to
+     * no schema, and swagger-php would warn about each one ("Unexpected @OA\Property()").
      */
     protected function getOpenApiScanPaths(): array
     {
-        return [
-            $this->workdir . '/src',
-            __DIR__ . '/../Trait',
-        ];
+        return [$this->workdir . '/src', ...$this->usedOaTraitFiles($this->workdir . '/src')];
+    }
+
+    /**
+     * The files of the package's Oa* traits that a PHP file of the directory names
+     *
+     * @return string[]
+     */
+    private function usedOaTraitFiles(string $dir): array
+    {
+        $traits = [];
+        foreach (glob(__DIR__ . '/../Trait/Oa*.php') ?: [] as $file) {
+            $traits[basename($file, '.php')] = $file;
+        }
+        if (empty($traits) || !is_dir($dir)) {
+            return [];
+        }
+        $pattern = '/\\b(' . implode('|', array_map(fn(string $trait) => preg_quote($trait, '/'), array_keys($traits))) . ')\\b/';
+
+        $used = [];
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+        foreach ($files as $file) {
+            if ($file instanceof SplFileInfo && $file->getExtension() === 'php'
+                && preg_match_all($pattern, (string)file_get_contents($file->getPathname()), $matches) > 0
+            ) {
+                foreach ($matches[1] as $trait) {
+                    if (isset($traits[$trait])) {
+                        $used[$trait] = $traits[$trait];
+                    }
+                }
+            }
+        }
+        ksort($used);
+        return array_values($used);
     }
 
     /**
